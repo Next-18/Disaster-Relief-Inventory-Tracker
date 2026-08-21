@@ -1,0 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; height: 100dvh; overflow: hidden; background: #edf3f9; color: #163b68; font-family: Inter, Arial, sans-serif; }
+.page { height: 100vh; height: 100dvh; padding: 16px 24px; display: grid; place-items: center; }
+.shell { width: min(1040px, 100%); height: min(650px, calc(100dvh - 32px)); overflow: hidden; display: grid; grid-template-columns: 1.06fr .94fr; background: #fff; border: 1px solid #d5e1ee; border-radius: 28px; box-shadow: 0 18px 55px rgba(34, 69, 111, .14); }
+.brand-panel { position: relative; padding: 52px 56px; color: white; background: linear-gradient(145deg, #123a68 0%, #1765b8 100%); display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+.brand-panel:after { content: ''; position: absolute; width: 480px; height: 480px; right: -260px; bottom: -260px; border: 65px solid rgba(255,255,255,.055); border-radius: 50%; }
+.brand { display: flex; align-items: center; gap: 13px; font-weight: 700; font-size: 18px; line-height: 1.15; position: relative; z-index: 1; }
+.mark { display: grid; place-items: center; height: 51px; width: 51px; flex: none; border-radius: 14px; background: #31d29c; color: #fff; font-weight: 800; font-size: 16px; }
+.brand-copy { position: relative; z-index: 1; padding: 30px 0; }
+.brand-copy h1 { margin: 0 0 26px; max-width: 390px; font-size: clamp(37px, 4.3vw, 55px); line-height: 1.08; letter-spacing: -.055em; }
+.brand-copy p { margin: 0; max-width: 315px; font-size: 18px; line-height: 1.76; color: #e3f1ff; }
+.secure { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; font-size: 13px; color: #dcecff; }
+.form-panel { padding: 58px 64px; display: flex; flex-direction: column; justify-content: center; }
+.eyebrow { color: #168259; background: #ddfaeb; width: max-content; border-radius: 999px; padding: 6px 12px; margin: 0 0 20px; font-size: 12px; font-weight: 800; }
+h2 { margin: 0; color: #153a67; font-size: 35px; letter-spacing: -.045em; line-height: 1.16; }
+.intro { margin: 13px 0 32px; max-width: 330px; color: #64748c; font-size: 15px; line-height: 1.55; }
+.notice { margin: -14px 0 20px; padding: 11px 13px; border-radius: 10px; font-size: 13px; color: #a33c21; background: #fff4ec; border: 1px solid #ffd7bd; }
+label { display: block; margin-bottom: 8px; color: #52627b; font-size: 13px; font-weight: 700; }
+.field { width: 100%; height: 52px; margin-bottom: 20px; padding: 0 15px; color: #1d3e69; border: 1px solid #cfdaea; border-radius: 12px; outline: none; font-size: 15px; transition: .2s; }
+.field::placeholder { color: #94a3b8; }
+.field:focus { border-color: #2177d8; box-shadow: 0 0 0 4px #e6f0ff; }
+.password-wrap { position: relative; }
+.password-wrap .field { padding-right: 52px; }
+.toggle { position: absolute; top: 1px; right: 3px; height: 49px; width: 45px; cursor: pointer; border: 0; color: #69809d; font-size: 18px; }
+.below { margin: 0 0 25px; display: flex; justify-content: space-between; gap: 10px; align-items: center; font-size: 13px; color: #64748b; }
+.remember { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.remember input { accent-color: #2377d9; width: 15px; height: 15px; }
+a { color: #1f73d1; font-weight: 700; text-decoration: none; }
+.submit { width: 100%; height: 53px; cursor: pointer; color: #fff; background: #2277df; border: 0; border-radius: 12px; box-shadow: 0 7px 16px rgba(33, 114, 211, .24); font-weight: 800; font-size: 15px; transition: transform .2s, background .2s; }
+.submit:hover { background: #1468cc; transform: translateY(-1px); }
+.help { margin: 27px 0 0; padding-top: 22px; border-top: 1px solid #e7edf5; color: #718198; font-size: 12px; line-height: 1.55; text-align: center; }
+@media (max-height: 720px) and (min-width: 751px) { .shell { height: calc(100dvh - 20px); } .brand-panel { padding: 34px 44px; } .brand-copy { padding: 18px 0; } .brand-copy h1 { margin-bottom: 15px; font-size: 40px; } .brand-copy p { font-size: 15px; line-height: 1.55; } .form-panel { padding: 30px 48px; } .eyebrow { margin-bottom: 12px; } h2 { font-size: 30px; } .intro { margin: 8px 0 18px; } .field { height: 46px; margin-bottom: 13px; } .toggle { height: 43px; } .below { margin-bottom: 16px; } .help { margin-top: 17px; padding-top: 15px; } }
+@media (max-width: 750px) { body { overflow: auto; } .page { min-height: 100vh; height: auto; padding: 0; } .shell { height: auto; min-height: 100vh; border: 0; border-radius: 0; grid-template-columns: 1fr; } .brand-panel { min-height: 255px; padding: 31px 30px; } .brand-copy { padding: 22px 0 0; } .brand-copy h1 { margin-bottom: 8px; font-size: 33px; } .brand-copy p, .secure { display: none; } .form-panel { padding: 40px 30px; justify-content: flex-start; } }
