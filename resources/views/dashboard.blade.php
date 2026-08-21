@@ -10,7 +10,7 @@
             <h2>Good evening, {{ explode(' ', auth()->user()->name)[0] }} 👋</h2>
             <p>Here’s the latest relief operation overview for <strong>Barangay San Juan.</strong></p>
         </div>
-        <button class="primary-action">+ Record Distribution</button>
+        <button class="add-button" type="button"><span>+</span> Record Distribution</button>
     </section>
 
     <section class="metrics">
