@@ -18,5 +18,6 @@
 
     {{-- place for page-specific modals or dialogs --}}
     @stack('modals')
+    @stack('scripts')
 </body>
 </html>

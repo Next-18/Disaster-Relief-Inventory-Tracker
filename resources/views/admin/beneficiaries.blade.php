@@ -34,6 +34,7 @@
 						<th>HOUSEHOLD</th>
 						<th>PRIORITY</th>
 						<th>STATUS</th>
+						<th>ACTIONS</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -47,10 +48,18 @@
 							<td>{{ $beneficiary->household_size ?: '—' }} members</td>
 							<td><span class="tag neutral">{{ $beneficiary->priority_type }}</span></td>
 							<td><span class="tag success">{{ $beneficiary->status }}</span></td>
+							<td>
+								<button type="button" onclick="editBeneficiary({{ $beneficiary->id }}, '{{ $beneficiary->full_name }}', '{{ $beneficiary->contact_number ?? '' }}', '{{ $beneficiary->address ?? '' }}', '{{ $beneficiary->household_size ?? '' }}', '{{ $beneficiary->priority_type }}', '{{ $beneficiary->status }}')" class="action-btn">Edit</button>
+								<form method="POST" action="{{ route('admin.beneficiaries.delete', $beneficiary->id) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this beneficiary?');">
+									@csrf
+									@method('DELETE')
+									<button type="submit" class="action-btn delete">Delete</button>
+								</form>
+							</td>
 						</tr>
 					@empty
 						<tr>
-							<td colspan="5" class="empty-cell">No beneficiary records yet.</td>
+							<td colspan="6" class="empty-cell">No beneficiary records yet.</td>
 						</tr>
 					@endforelse
 				</tbody>
@@ -63,24 +72,62 @@
 	<dialog class="form-modal" id="beneficiary-modal">
 		<div class="modal-title">
 			<div>
-				<h3>Add beneficiary</h3>
-				<p>Create a barangay beneficiary record.</p>
+				<h3 id="modal-title">Add beneficiary</h3>
+				<p id="modal-description">Create a barangay beneficiary record.</p>
 			</div>
 			<button type="button" class="modal-close" onclick="document.getElementById('beneficiary-modal').close()" aria-label="Close">×</button>
 		</div>
-		<form method="POST" action="{{ route('admin.beneficiaries.store') }}">
+		<form id="beneficiary-form" method="POST" action="{{ route('admin.beneficiaries.store') }}">
 			@csrf
-			<label>Full name<input name="full_name" value="{{ old('full_name') }}" required></label>
-			<label>Contact number<input name="contact_number" value="{{ old('contact_number') }}"></label>
-			<label>Address<input name="address" value="{{ old('address') }}"></label>
+			<input type="hidden" name="_method" id="form-method" value="POST">
+			<input type="hidden" name="id" id="beneficiary-id">
+			<label>Full name<input name="full_name" id="full_name" value="{{ old('full_name') }}" required></label>
+			<label>Contact number<input name="contact_number" id="contact_number" value="{{ old('contact_number') }}"></label>
+			<label>Address<input name="address" id="address" value="{{ old('address') }}"></label>
 			<div class="form-row">
-				<label>Household size<input name="household_size" type="number" min="1" value="{{ old('household_size') }}"></label>
-				<label>Priority<select name="priority_type"><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select></label>
+				<label>Household size<input name="household_size" type="number" min="1" id="household_size" value="{{ old('household_size') }}"></label>
+				<label>Priority<select name="priority_type" id="priority_type"><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select></label>
 			</div>
+			<label>Status<select name="status" id="status"><option>Active</option><option>Inactive</option></select></label>
 			<div class="modal-actions">
 				<button type="button" class="cancel-button" onclick="document.getElementById('beneficiary-modal').close()">Cancel</button>
-				<button class="primary-action" type="submit">Save beneficiary</button>
+				<button class="primary-action" type="submit" id="submit-btn">Save beneficiary</button>
 			</div>
 		</form>
 	</dialog>
+@endpush
+
+@push('scripts')
+<script>
+	function editBeneficiary(id, fullName, contactNumber, address, householdSize, priorityType, status) {
+		document.getElementById('modal-title').textContent = 'Edit beneficiary';
+		document.getElementById('modal-description').textContent = 'Update beneficiary information.';
+		document.getElementById('form-method').value = 'PUT';
+		document.getElementById('beneficiary-form').action = '/admin/beneficiaries/' + id;
+		document.getElementById('beneficiary-id').value = id;
+		document.getElementById('full_name').value = fullName;
+		document.getElementById('contact_number').value = contactNumber;
+		document.getElementById('address').value = address;
+		document.getElementById('household_size').value = householdSize;
+		document.getElementById('priority_type').value = priorityType;
+		document.getElementById('status').value = status;
+		document.getElementById('submit-btn').textContent = 'Update beneficiary';
+		document.getElementById('beneficiary-modal').showModal();
+	}
+
+	document.querySelector('.add-button').addEventListener('click', function() {
+		document.getElementById('modal-title').textContent = 'Add beneficiary';
+		document.getElementById('modal-description').textContent = 'Create a barangay beneficiary record.';
+		document.getElementById('form-method').value = 'POST';
+		document.getElementById('beneficiary-form').action = '{{ route('admin.beneficiaries.store') }}';
+		document.getElementById('beneficiary-id').value = '';
+		document.getElementById('full_name').value = '';
+		document.getElementById('contact_number').value = '';
+		document.getElementById('address').value = '';
+		document.getElementById('household_size').value = '';
+		document.getElementById('priority_type').value = 'Regular';
+		document.getElementById('status').value = 'Active';
+		document.getElementById('submit-btn').textContent = 'Save beneficiary';
+	});
+</script>
 @endpush

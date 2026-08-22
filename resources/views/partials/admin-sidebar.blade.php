@@ -1,5 +1,5 @@
 <aside class="sidebar">
-    <a href="{{ route('dashboard') }}" class="brand"><span class="brand-mark">DR</span><span>Relief<br>Tracker</span></a>
+    <a href="{{ route('dashboard') }}" class="brand"><img src="{{ asset('images/logo.png') }}" alt="Relief Tracker" class="brand-logo"><span>Disaster Relief<br>Inventory Tracker</span></a>
     <nav class="nav-links" aria-label="Main navigation">
         <a class="{{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}"><svg class="nav-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Dashboard</span></a>
         <a class="{{ request()->routeIs('admin.beneficiaries') ? 'active' : '' }}" href="{{ route('admin.beneficiaries') }}"><svg class="nav-icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M17 11a3 3 0 1 0-1.3-5.7M17 14c2.8 0 5 2.3 5 5"/></svg><span>Beneficiaries</span></a>

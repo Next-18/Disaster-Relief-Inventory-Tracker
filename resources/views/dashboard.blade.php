@@ -10,7 +10,7 @@
             <h2>Good evening, {{ explode(' ', auth()->user()->name)[0] }} 👋</h2>
             <p>Here’s the latest relief operation overview for <strong>Barangay San Juan.</strong></p>
         </div>
-        <button class="add-button" type="button"><span>+</span> Record Distribution</button>
+        <button class="add-button" type="button" onclick="document.getElementById('distribution-modal').showModal()"><span>+</span> Record Distribution</button>
     </section>
 
     <section class="metrics">
@@ -47,10 +47,20 @@
                         <tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DATE RELEASED</th><th>STATUS</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td><i class="avatar a1">MR</i><b>Maria Reyes</b><small>BEN-1024</small></td><td>Family Food Pack</td><td>Aug 20, 2026</td><td><em class="status success">Released</em></td></tr>
-                        <tr><td><i class="avatar a2">JD</i><b>Juan Dela Cruz</b><small>BEN-0981</small></td><td>Hygiene Kit</td><td>Aug 20, 2026</td><td><em class="status success">Released</em></td></tr>
-                        <tr><td><i class="avatar a3">AS</i><b>Angela Santos</b><small>BEN-1153</small></td><td>Family Food Pack</td><td>Aug 19, 2026</td><td><em class="status success">Released</em></td></tr>
-                        <tr><td><i class="avatar a4">RP</i><b>Ramon Perez</b><small>BEN-1047</small></td><td>Water &amp; Essentials</td><td>Aug 19, 2026</td><td><em class="status pending">Pending</em></td></tr>
+                        @forelse($recentDistributions as $distribution)
+                            @php
+                                $avatarClass = 'a' . (($distribution->id % 4) + 1);
+                                $initials = strtoupper(substr($distribution->beneficiary->full_name, 0, 1)) . strtoupper(substr(explode(' ', $distribution->beneficiary->full_name)[1] ?? '', 0, 1));
+                            @endphp
+                            <tr>
+                                <td><i class="avatar {{ $avatarClass }}">{{ $initials }}</i><b>{{ $distribution->beneficiary->full_name }}</b><small>{{ $distribution->beneficiary->beneficiary_no }}</small></td>
+                                <td>{{ $distribution->package_name }}</td>
+                                <td>{{ $distribution->date_released->format('M d, Y') }}</td>
+                                <td><em class="status {{ $distribution->status === 'Released' ? 'success' : 'pending' }}">{{ $distribution->status }}</em></td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="4" class="empty-cell">No distribution records yet.</td></tr>
+                        @endforelse
                     </tbody>
                 </table>
             </div>
@@ -73,3 +83,38 @@
         </aside>
     </section>
 @endsection
+
+@push('modals')
+@php
+    $beneficiaries = \App\Models\Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
+@endphp
+    <dialog class="form-modal" id="distribution-modal">
+        <div class="modal-title">
+            <div>
+                <h3>Record Distribution</h3>
+                <p>Record a relief package distribution to a beneficiary.</p>
+            </div>
+            <button type="button" class="modal-close" onclick="document.getElementById('distribution-modal').close()" aria-label="Close">×</button>
+        </div>
+        <form method="POST" action="{{ route('admin.distribution.store') }}">
+            @csrf
+            <label>Beneficiary<select name="beneficiary_id" required>
+                <option value="">Select beneficiary</option>
+                @foreach($beneficiaries as $beneficiary)
+                    <option value="{{ $beneficiary->id }}">{{ $beneficiary->full_name }} ({{ $beneficiary->beneficiary_no }})</option>
+                @endforeach
+            </select></label>
+            <label>Relief Package<input name="package_name" placeholder="e.g., Family Food Pack" required></label>
+            <label>Date Released<input name="date_released" type="date" value="{{ now()->format('Y-m-d') }}" required></label>
+            <label>Status<select name="status" required>
+                <option value="Released">Released</option>
+                <option value="Pending">Pending</option>
+            </select></label>
+            <label>Notes<textarea name="notes" rows="3"></textarea></label>
+            <div class="modal-actions">
+                <button type="button" class="cancel-button" onclick="document.getElementById('distribution-modal').close()">Cancel</button>
+                <button class="primary-action" type="submit">Record Distribution</button>
+            </div>
+        </form>
+    </dialog>
+@endpush

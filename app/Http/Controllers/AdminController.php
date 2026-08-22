@@ -27,6 +27,28 @@ class AdminController extends Controller
         return redirect()->route('admin.beneficiaries')->with('success', 'Beneficiary added successfully.');
     }
 
+    public function updateBeneficiary(Request $request, $id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        $data = $request->validate([
+            'full_name' => ['required', 'string', 'max:255'],
+            'contact_number' => ['nullable', 'string', 'max:30'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'priority_type' => ['required', 'string', 'max:50'],
+            'status' => ['required', 'string', 'max:20'],
+        ]);
+        $beneficiary->update($data);
+        return redirect()->route('admin.beneficiaries')->with('success', 'Beneficiary updated successfully.');
+    }
+
+    public function deleteBeneficiary($id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        $beneficiary->delete();
+        return redirect()->route('admin.beneficiaries')->with('success', 'Beneficiary deleted successfully.');
+    }
+
     public function inventory()
     {
         return view('admin.inventory', ['items' => InventoryItem::orderBy('item_name')->paginate(10)]);
@@ -44,5 +66,48 @@ class AdminController extends Controller
         $data['status'] = $data['quantity'] <= $data['minimum_stock'] ? 'Low Stock' : 'In Stock';
         InventoryItem::create($data);
         return redirect()->route('admin.inventory')->with('success', 'Inventory item added successfully.');
+    }
+
+    public function updateInventory(Request $request, $id)
+    {
+        $item = InventoryItem::findOrFail($id);
+        $data = $request->validate([
+            'item_name' => ['required', 'string', 'max:255'],
+            'category' => ['required', 'string', 'max:60'],
+            'quantity' => ['required', 'integer', 'min:0'],
+            'unit' => ['required', 'string', 'max:30'],
+            'minimum_stock' => ['required', 'integer', 'min:0'],
+        ]);
+        $data['status'] = $data['quantity'] <= $data['minimum_stock'] ? 'Low Stock' : 'In Stock';
+        $item->update($data);
+        return redirect()->route('admin.inventory')->with('success', 'Inventory item updated successfully.');
+    }
+
+    public function deleteInventory($id)
+    {
+        $item = InventoryItem::findOrFail($id);
+        $item->delete();
+        return redirect()->route('admin.inventory')->with('success', 'Inventory item deleted successfully.');
+    }
+
+    public function distribution()
+    {
+        $distributions = Distribution::with('beneficiary')->latest()->paginate(10);
+        $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
+        return view('admin.distribution', compact('distributions', 'beneficiaries'));
+    }
+
+    public function storeDistribution(Request $request)
+    {
+        $data = $request->validate([
+            'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
+            'package_name' => ['required', 'string', 'max:255'],
+            'date_released' => ['required', 'date'],
+            'status' => ['required', 'string', 'max:20'],
+            'notes' => ['nullable', 'string'],
+        ]);
+        $data['distributed_by'] = auth()->id();
+        Distribution::create($data);
+        return redirect()->route('admin.distribution')->with('success', 'Distribution recorded successfully.');
     }
 }

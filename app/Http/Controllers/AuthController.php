@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Distribution;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -22,7 +23,10 @@ class AuthController extends Controller
         return back()->withErrors(['email' => 'The provided account details do not match our records.'])->onlyInput('email');
     }
 
-    public function dashboard() { return view('dashboard'); }
+    public function dashboard() { 
+        $recentDistributions = Distribution::with('beneficiary')->latest()->take(4)->get();
+        return view('dashboard', compact('recentDistributions')); 
+    }
 
     public function module(string $module)
     {

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 70" fill="none">
+  <!-- Logo Mark - Shield with heart/hand symbol representing relief -->
+  <g>
+    <!-- Shield shape - larger and bolder -->
+    <path d="M8 2 L52 2 L52 30 C52 50 42 62 30 66 C18 62 8 50 8 30 Z" fill="#ffffff" stroke="#ffffff" stroke-width="3"/>
+    <!-- Heart/hand symbol inside shield - bold and clear -->
+    <path d="M30 18 C30 18 22 10 14 15 C6 20 6 30 14 36 L30 48 L46 36 C54 30 54 20 46 15 C38 10 30 18 30 18" fill="#1765b8"/>
+    <!-- Small inventory box icon - more visible -->
+    <rect x="22" y="50" width="16" height="10" rx="2" fill="#123a68"/>
+    <line x1="26" y1="55" x2="34" y2="55" stroke="#ffffff" stroke-width="2"/>
+  </g>
+  
+  <!-- Text: Disaster Relief - white for contrast on blue background -->
+  <text x="65" y="32" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="-0.02">Disaster Relief</text>
+  
+  <!-- Text: Inventory Tracker - lighter white for contrast -->
+  <text x="65" y="54" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="600" fill="#e3f1ff" letter-spacing="-0.01">Inventory Tracker</text>
+</svg>

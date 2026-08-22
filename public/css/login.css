@@ -3,14 +3,15 @@
 body { margin: 0; height: 100vh; height: 100dvh; overflow: hidden; background: #edf3f9; color: #163b68; font-family: Inter, Arial, sans-serif; }
 .page { height: 100vh; height: 100dvh; padding: 16px 24px; display: grid; place-items: center; }
 .shell { width: min(1040px, 100%); height: min(650px, calc(100dvh - 32px)); overflow: hidden; display: grid; grid-template-columns: 1.06fr .94fr; background: #fff; border: 1px solid #d5e1ee; border-radius: 28px; box-shadow: 0 18px 55px rgba(34, 69, 111, .14); }
-.brand-panel { position: relative; padding: 52px 56px; color: white; background: linear-gradient(145deg, #123a68 0%, #1765b8 100%); display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+.brand-panel { position: relative; padding: 52px 56px; color: #1a3a5c; background: linear-gradient(145deg, #f5f5f0 0%, #e8e8e0 100%); display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
 .brand-panel:after { content: ''; position: absolute; width: 480px; height: 480px; right: -260px; bottom: -260px; border: 65px solid rgba(255,255,255,.055); border-radius: 50%; }
-.brand { display: flex; align-items: center; gap: 13px; font-weight: 700; font-size: 18px; line-height: 1.15; position: relative; z-index: 1; }
-.mark { display: grid; place-items: center; height: 51px; width: 51px; flex: none; border-radius: 14px; background: #31d29c; color: #fff; font-weight: 800; font-size: 16px; }
+.brand { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; }
+.logo-image { width: 120px; height: auto; }
+.brand span { color: #1a3a5c; font-size: 20px; font-weight: 800; line-height: 1.2; }
 .brand-copy { position: relative; z-index: 1; padding: 30px 0; }
-.brand-copy h1 { margin: 0 0 26px; max-width: 390px; font-size: clamp(37px, 4.3vw, 55px); line-height: 1.08; letter-spacing: -.055em; }
-.brand-copy p { margin: 0; max-width: 315px; font-size: 18px; line-height: 1.76; color: #e3f1ff; }
-.secure { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; font-size: 13px; color: #dcecff; }
+.brand-copy h1 { margin: 0 0 26px; max-width: 390px; font-size: clamp(37px, 4.3vw, 55px); line-height: 1.08; letter-spacing: -.055em; color: #1a3a5c; }
+.brand-copy p { margin: 0; max-width: 315px; font-size: 18px; line-height: 1.76; color: #4a6a8c; }
+.secure { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; font-size: 13px; color: #5a7a9c; }
 .form-panel { padding: 58px 64px; display: flex; flex-direction: column; justify-content: center; }
 .eyebrow { color: #168259; background: #ddfaeb; width: max-content; border-radius: 999px; padding: 6px 12px; margin: 0 0 20px; font-size: 12px; font-weight: 800; }
 h2 { margin: 0; color: #153a67; font-size: 35px; letter-spacing: -.045em; line-height: 1.16; }
