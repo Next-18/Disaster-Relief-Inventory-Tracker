@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Beneficiary;
+use App\Models\Distribution;
 use App\Models\InventoryItem;
 use Illuminate\Http\Request;
 
@@ -108,6 +109,32 @@ class AdminController extends Controller
         ]);
         $data['distributed_by'] = auth()->id();
         Distribution::create($data);
+
+        if ($request->ajax()) {
+            return response()->json(['success' => true, 'message' => 'Distribution recorded successfully.']);
+        }
+
         return redirect()->route('admin.distribution')->with('success', 'Distribution recorded successfully.');
+    }
+
+    public function updateDistribution(Request $request, $id)
+    {
+        $distribution = Distribution::findOrFail($id);
+        $data = $request->validate([
+            'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
+            'package_name' => ['required', 'string', 'max:255'],
+            'date_released' => ['required', 'date'],
+            'status' => ['required', 'string', 'max:20'],
+            'notes' => ['nullable', 'string'],
+        ]);
+        $distribution->update($data);
+        return redirect()->route('admin.distribution')->with('success', 'Distribution updated successfully.');
+    }
+
+    public function deleteDistribution($id)
+    {
+        $distribution = Distribution::findOrFail($id);
+        $distribution->delete();
+        return redirect()->route('admin.distribution')->with('success', 'Distribution deleted successfully.');
     }
 }

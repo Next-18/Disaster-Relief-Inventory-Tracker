@@ -56,11 +56,7 @@
                             <td><span class="tag {{ $item->status === 'Low Stock' ? 'warning' : 'success' }}">{{ $item->status }}</span></td>
                             <td>
                                 <button type="button" onclick="editInventory({{ $item->id }}, '{{ $item->item_name }}', '{{ $item->category }}', {{ $item->quantity }}, '{{ $item->unit }}', {{ $item->minimum_stock }})" class="action-btn">Edit</button>
-                                <form method="POST" action="{{ route('admin.inventory.delete', $item->id) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this item?');">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="action-btn delete">Delete</button>
-                                </form>
+                                <button type="button" onclick="deleteInventory({{ $item->id }})" class="action-btn delete">Delete</button>
                             </td>
                         </tr>
                     @empty
@@ -119,16 +115,57 @@
 
     document.querySelector('.add-button').addEventListener('click', function() {
         document.getElementById('modal-title').textContent = 'Add inventory item';
-        document.getElementById('modal-description').textContent = 'Enter a supply item and its stock level.';
+        document.getElementById('modal-description').textContent = 'Add a new inventory item to the system.';
         document.getElementById('form-method').value = 'POST';
         document.getElementById('inventory-form').action = '{{ route('admin.inventory.store') }}';
         document.getElementById('item-id').value = '';
         document.getElementById('item_name').value = '';
         document.getElementById('category').value = '';
-        document.getElementById('quantity').value = '0';
-        document.getElementById('unit').value = 'pcs';
-        document.getElementById('minimum_stock').value = '0';
-        document.getElementById('submit-btn').textContent = 'Save item';
+        document.getElementById('quantity').value = '';
+        document.getElementById('unit').value = '';
+        document.getElementById('minimum_stock').value = '';
+        document.getElementById('submit-btn').textContent = 'Add item';
     });
+
+    function deleteInventory(id) {
+        Swal.fire({
+            title: 'Delete Inventory Item',
+            text: 'Are you sure you want to delete this inventory item? This action cannot be undone.',
+            icon: 'warning',
+            iconColor: '#f59e0b',
+            showCancelButton: true,
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#a96d18',
+            cancelButtonColor: '#64748b',
+            background: '#ffffff',
+            color: '#1e293b',
+            customClass: {
+                popup: 'modern-swal-popup',
+                title: 'modern-swal-title',
+                content: 'modern-swal-content',
+                confirmButton: 'modern-swal-confirm',
+                cancelButton: 'modern-swal-cancel'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/admin/inventory/' + id;
+                const csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = '_token';
+                csrfInput.value = '{{ csrf_token() }}';
+                form.appendChild(csrfInput);
+                const methodInput = document.createElement('input');
+                methodInput.type = 'hidden';
+                methodInput.name = '_method';
+                methodInput.value = 'DELETE';
+                form.appendChild(methodInput);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        });
+    }
 </script>
 @endpush

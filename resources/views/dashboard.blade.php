@@ -50,10 +50,11 @@
                         @forelse($recentDistributions as $distribution)
                             @php
                                 $avatarClass = 'a' . (($distribution->id % 4) + 1);
-                                $initials = strtoupper(substr($distribution->beneficiary->full_name, 0, 1)) . strtoupper(substr(explode(' ', $distribution->beneficiary->full_name)[1] ?? '', 0, 1));
+                                $beneficiaryName = $distribution->beneficiary ? $distribution->beneficiary->full_name : 'Unknown Beneficiary';
+                                $initials = $distribution->beneficiary ? strtoupper(substr($distribution->beneficiary->full_name, 0, 1)) . strtoupper(substr(explode(' ', $distribution->beneficiary->full_name)[1] ?? '', 0, 1)) : '??';
                             @endphp
                             <tr>
-                                <td><i class="avatar {{ $avatarClass }}">{{ $initials }}</i><b>{{ $distribution->beneficiary->full_name }}</b><small>{{ $distribution->beneficiary->beneficiary_no }}</small></td>
+                                <td><i class="avatar {{ $avatarClass }}">{{ $initials }}</i><b>{{ $beneficiaryName }}</b><small>{{ $distribution->beneficiary ? $distribution->beneficiary->beneficiary_no : 'N/A' }}</small></td>
                                 <td>{{ $distribution->package_name }}</td>
                                 <td>{{ $distribution->date_released->format('M d, Y') }}</td>
                                 <td><em class="status {{ $distribution->status === 'Released' ? 'success' : 'pending' }}">{{ $distribution->status }}</em></td>
@@ -96,7 +97,7 @@
             </div>
             <button type="button" class="modal-close" onclick="document.getElementById('distribution-modal').close()" aria-label="Close">×</button>
         </div>
-        <form method="POST" action="{{ route('admin.distribution.store') }}">
+        <form id="dashboard-distribution-form" method="POST" action="{{ route('admin.distribution.store') }}">
             @csrf
             <label>Beneficiary<select name="beneficiary_id" required>
                 <option value="">Select beneficiary</option>
@@ -117,4 +118,62 @@
             </div>
         </form>
     </dialog>
+@endpush
+
+@push('scripts')
+<script>
+    document.getElementById('dashboard-distribution-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const form = this;
+        const formData = new FormData(form);
+
+        // Close modal immediately
+        document.getElementById('distribution-modal').close();
+
+        fetch(form.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Distribution Recorded',
+                    text: data.message,
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#475569',
+                    background: '#ffffff',
+                    color: '#1e293b',
+                    iconColor: '#10b981',
+                    showClass: {
+                        popup: 'animate__animated animate__fadeInDown'
+                    },
+                    hideClass: {
+                        popup: 'animate__animated animate__fadeOutUp'
+                    }
+                }).then(() => {
+                    form.reset();
+                    location.reload();
+                });
+            }
+        })
+        .catch(error => {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'An error occurred while recording the distribution.',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#475569',
+                background: '#ffffff',
+                color: '#1e293b',
+                iconColor: '#ef4444'
+            });
+        });
+    });
+</script>
 @endpush

@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 class Distribution extends Model
 {
     protected $fillable = ['beneficiary_id', 'package_name', 'date_released', 'status', 'notes', 'distributed_by'];
+
+    protected $casts = [
+        'date_released' => 'date',
+    ];
     
     public function beneficiary()
     {

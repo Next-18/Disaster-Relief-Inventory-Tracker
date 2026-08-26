@@ -7,9 +7,6 @@
         @if(!empty($showBell))
             <button class="bell" type="button">♧<i></i></button>
         @endif
-        <form method="POST" action="{{ route('logout') }}">
-            @csrf
-            <button class="logout" type="submit">Sign out</button>
-        </form>
+        <button class="logout" type="button" onclick="confirmLogout()">Sign out</button>
     </div>
 </header>

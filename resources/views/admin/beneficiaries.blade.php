@@ -50,11 +50,7 @@
 							<td><span class="tag success">{{ $beneficiary->status }}</span></td>
 							<td>
 								<button type="button" onclick="editBeneficiary({{ $beneficiary->id }}, '{{ $beneficiary->full_name }}', '{{ $beneficiary->contact_number ?? '' }}', '{{ $beneficiary->address ?? '' }}', '{{ $beneficiary->household_size ?? '' }}', '{{ $beneficiary->priority_type }}', '{{ $beneficiary->status }}')" class="action-btn">Edit</button>
-								<form method="POST" action="{{ route('admin.beneficiaries.delete', $beneficiary->id) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this beneficiary?');">
-									@csrf
-									@method('DELETE')
-									<button type="submit" class="action-btn delete">Delete</button>
-								</form>
+								<button type="button" onclick="deleteBeneficiary({{ $beneficiary->id }})" class="action-btn delete">Delete</button>
 							</td>
 						</tr>
 					@empty
@@ -129,5 +125,46 @@
 		document.getElementById('status').value = 'Active';
 		document.getElementById('submit-btn').textContent = 'Save beneficiary';
 	});
+
+	function deleteBeneficiary(id) {
+		Swal.fire({
+			title: 'Delete Beneficiary',
+			text: 'Are you sure you want to delete this beneficiary? This action cannot be undone.',
+			icon: 'warning',
+			iconColor: '#f59e0b',
+			showCancelButton: true,
+			confirmButtonText: 'Delete',
+			cancelButtonText: 'Cancel',
+			confirmButtonColor: '#a96d18',
+			cancelButtonColor: '#64748b',
+			background: '#ffffff',
+			color: '#1e293b',
+			customClass: {
+				popup: 'modern-swal-popup',
+				title: 'modern-swal-title',
+				content: 'modern-swal-content',
+				confirmButton: 'modern-swal-confirm',
+				cancelButton: 'modern-swal-cancel'
+			}
+		}).then((result) => {
+			if (result.isConfirmed) {
+				const form = document.createElement('form');
+				form.method = 'POST';
+				form.action = '/admin/beneficiaries/' + id;
+				const csrfInput = document.createElement('input');
+				csrfInput.type = 'hidden';
+				csrfInput.name = '_token';
+				csrfInput.value = '{{ csrf_token() }}';
+				form.appendChild(csrfInput);
+				const methodInput = document.createElement('input');
+				methodInput.type = 'hidden';
+				methodInput.name = '_method';
+				methodInput.value = 'DELETE';
+				form.appendChild(methodInput);
+				document.body.appendChild(form);
+				form.submit();
+			}
+		});
+	}
 </script>
 @endpush
