@@ -43,11 +43,11 @@
 								<b>{{ $distribution->beneficiary ? $distribution->beneficiary->full_name : 'Unknown Beneficiary' }}</b>
 								<small>{{ $distribution->beneficiary ? $distribution->beneficiary->beneficiary_no : 'N/A' }}</small>
 							</td>
-							<td>{{ $distribution->package_name }}</td>
+							<td>{{ $distribution->reliefPackage ? $distribution->reliefPackage->package_name : 'Unknown Package' }}</td>
 							<td>{{ $distribution->date_released->format('M d, Y') }}</td>
 							<td><span class="tag {{ $distribution->status === 'Released' ? 'success' : 'warning' }}">{{ $distribution->status }}</span></td>
 							<td>
-								<button type="button" onclick="editDistribution({{ $distribution->id }}, {{ $distribution->beneficiary_id }}, '{{ $distribution->package_name }}', '{{ $distribution->date_released->format('Y-m-d') }}', '{{ $distribution->status }}', '{{ $distribution->notes ?? '' }}')" class="action-btn">Edit</button>
+								<button type="button" onclick="editDistribution({{ $distribution->id }}, {{ $distribution->beneficiary_id }}, {{ $distribution->package_id ?? 'null' }}, '{{ $distribution->date_released->format('Y-m-d') }}', '{{ $distribution->status }}', '{{ $distribution->notes ?? '' }}')" class="action-btn">Edit</button>
 								<button type="button" onclick="deleteDistribution({{ $distribution->id }})" class="action-btn delete">Delete</button>
 							</td>
 						</tr>
@@ -82,7 +82,12 @@
 					<option value="{{ $beneficiary->id }}">{{ $beneficiary->full_name }} ({{ $beneficiary->beneficiary_no }})</option>
 				@endforeach
 			</select></label>
-			<label>Relief Package<input name="package_name" id="package_name" placeholder="e.g., Family Food Pack" required></label>
+			<label>Relief Package<select name="package_id" id="package_id" required>
+				<option value="">Select package</option>
+				@foreach($packages as $package)
+					<option value="{{ $package->id }}">{{ $package->package_name }}</option>
+				@endforeach
+			</select></label>
 			<label>Date Released<input name="date_released" type="date" id="date_released" value="{{ old('date_released') ?? now()->format('Y-m-d') }}" required></label>
 			<label>Status<select name="status" id="status" required>
 				<option value="Released">Released</option>
@@ -99,14 +104,14 @@
 
 @push('scripts')
 <script>
-	function editDistribution(id, beneficiaryId, packageName, dateReleased, status, notes) {
+	function editDistribution(id, beneficiaryId, packageId, dateReleased, status, notes) {
 		document.getElementById('modal-title').textContent = 'Edit Distribution';
 		document.getElementById('modal-description').textContent = 'Update distribution information.';
 		document.getElementById('form-method').value = 'PUT';
 		document.getElementById('distribution-form').action = '/admin/distribution/' + id;
 		document.getElementById('distribution-id').value = id;
 		document.getElementById('beneficiary_id').value = beneficiaryId;
-		document.getElementById('package_name').value = packageName;
+		document.getElementById('package_id').value = packageId;
 		document.getElementById('date_released').value = dateReleased;
 		document.getElementById('status').value = status;
 		document.getElementById('notes').value = notes;
@@ -121,7 +126,7 @@
 		document.getElementById('distribution-form').action = '{{ route('admin.distribution.store') }}';
 		document.getElementById('distribution-id').value = '';
 		document.getElementById('beneficiary_id').value = '';
-		document.getElementById('package_name').value = '';
+		document.getElementById('package_id').value = '';
 		document.getElementById('date_released').value = '{{ now()->format('Y-m-d') }}';
 		document.getElementById('status').value = 'Released';
 		document.getElementById('notes').value = '';

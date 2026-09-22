@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Beneficiary;
 use App\Models\Distribution;
 use App\Models\InventoryItem;
+use App\Models\ReliefPackage;
 use Illuminate\Http\Request;
 
 class AdminController extends Controller
@@ -91,18 +92,56 @@ class AdminController extends Controller
         return redirect()->route('admin.inventory')->with('success', 'Inventory item deleted successfully.');
     }
 
+    public function packages()
+    {
+        return view('admin.packages', ['packages' => ReliefPackage::latest()->paginate(10)]);
+    }
+
+    public function storePackage(Request $request)
+    {
+        $data = $request->validate([
+            'package_name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'category' => ['required', 'string', 'max:60'],
+            'status' => ['required', 'string', 'max:20'],
+        ]);
+        ReliefPackage::create($data);
+        return redirect()->route('admin.packages')->with('success', 'Relief package added successfully.');
+    }
+
+    public function updatePackage(Request $request, $id)
+    {
+        $package = ReliefPackage::findOrFail($id);
+        $data = $request->validate([
+            'package_name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'category' => ['required', 'string', 'max:60'],
+            'status' => ['required', 'string', 'max:20'],
+        ]);
+        $package->update($data);
+        return redirect()->route('admin.packages')->with('success', 'Relief package updated successfully.');
+    }
+
+    public function deletePackage($id)
+    {
+        $package = ReliefPackage::findOrFail($id);
+        $package->delete();
+        return redirect()->route('admin.packages')->with('success', 'Relief package deleted successfully.');
+    }
+
     public function distribution()
     {
-        $distributions = Distribution::with('beneficiary')->latest()->paginate(10);
+        $distributions = Distribution::with(['beneficiary', 'reliefPackage'])->latest()->paginate(10);
         $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
-        return view('admin.distribution', compact('distributions', 'beneficiaries'));
+        $packages = ReliefPackage::where('status', 'Available')->orderBy('package_name')->get();
+        return view('admin.distribution', compact('distributions', 'beneficiaries', 'packages'));
     }
 
     public function storeDistribution(Request $request)
     {
         $data = $request->validate([
             'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
-            'package_name' => ['required', 'string', 'max:255'],
+            'package_id' => ['required', 'exists:relief_packages,id'],
             'date_released' => ['required', 'date'],
             'status' => ['required', 'string', 'max:20'],
             'notes' => ['nullable', 'string'],
@@ -122,7 +161,7 @@ class AdminController extends Controller
         $distribution = Distribution::findOrFail($id);
         $data = $request->validate([
             'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
-            'package_name' => ['required', 'string', 'max:255'],
+            'package_id' => ['required', 'exists:relief_packages,id'],
             'date_released' => ['required', 'date'],
             'status' => ['required', 'string', 'max:20'],
             'notes' => ['nullable', 'string'],

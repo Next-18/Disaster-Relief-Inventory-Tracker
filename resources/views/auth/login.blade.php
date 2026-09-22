@@ -40,7 +40,7 @@
                         </button>
                     </div>
                     <div class="below"><label class="remember"><input type="checkbox" name="remember"> Remember me</label><a href="mailto:admin@barangay.gov.ph?subject=Account%20access%20help">Need help?</a></div>
-                    <button class="submit" type="submit">Sign in to Dashboard</button>
+                    <button class="submit" type="submit">Sign in</button>
                 </form>
                 <p class="help">For account concerns, please contact your Barangay Administrator.<br>Only registered Admin and Staff accounts can access this system.</p>
             </section>

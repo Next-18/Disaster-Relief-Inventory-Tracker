@@ -16,7 +16,10 @@ Route::get('/admin/inventory', [AdminController::class, 'inventory'])->middlewar
 Route::post('/admin/inventory', [AdminController::class, 'storeInventory'])->middleware('auth')->name('admin.inventory.store');
 Route::put('/admin/inventory/{id}', [AdminController::class, 'updateInventory'])->middleware('auth')->name('admin.inventory.update');
 Route::delete('/admin/inventory/{id}', [AdminController::class, 'deleteInventory'])->middleware('auth')->name('admin.inventory.delete');
-Route::get('/admin/packages', [AuthController::class, 'module'])->defaults('module', 'packages')->middleware('auth')->name('admin.packages');
+Route::get('/admin/packages', [AdminController::class, 'packages'])->middleware('auth')->name('admin.packages');
+Route::post('/admin/packages', [AdminController::class, 'storePackage'])->middleware('auth')->name('admin.packages.store');
+Route::put('/admin/packages/{id}', [AdminController::class, 'updatePackage'])->middleware('auth')->name('admin.packages.update');
+Route::delete('/admin/packages/{id}', [AdminController::class, 'deletePackage'])->middleware('auth')->name('admin.packages.delete');
 Route::get('/admin/qr-codes', [AuthController::class, 'module'])->defaults('module', 'qr-codes')->middleware('auth')->name('admin.qr-codes');
 Route::get('/admin/lost-qr', [AuthController::class, 'module'])->defaults('module', 'lost-qr')->middleware('auth')->name('admin.lost-qr');
 Route::get('/admin/distribution', [AdminController::class, 'distribution'])->middleware('auth')->name('admin.distribution');

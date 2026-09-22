@@ -7,7 +7,7 @@
 @section('content')
     <section class="welcome">
         <div>
-            <h2>Good evening, {{ explode(' ', auth()->user()->name)[0] }} 👋</h2>
+            <h2>Welcome, {{ explode(' ', auth()->user()->name)[0] }}</h2>
             <p>Here’s the latest relief operation overview for <strong>Barangay San Juan.</strong></p>
         </div>
         <button class="add-button" type="button" onclick="document.getElementById('distribution-modal').showModal()"><span>+</span> Record Distribution</button>
