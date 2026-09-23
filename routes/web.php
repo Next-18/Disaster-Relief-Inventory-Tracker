@@ -20,8 +20,11 @@ Route::get('/admin/packages', [AdminController::class, 'packages'])->middleware(
 Route::post('/admin/packages', [AdminController::class, 'storePackage'])->middleware('auth')->name('admin.packages.store');
 Route::put('/admin/packages/{id}', [AdminController::class, 'updatePackage'])->middleware('auth')->name('admin.packages.update');
 Route::delete('/admin/packages/{id}', [AdminController::class, 'deletePackage'])->middleware('auth')->name('admin.packages.delete');
-Route::get('/admin/qr-codes', [AuthController::class, 'module'])->defaults('module', 'qr-codes')->middleware('auth')->name('admin.qr-codes');
-Route::get('/admin/lost-qr', [AuthController::class, 'module'])->defaults('module', 'lost-qr')->middleware('auth')->name('admin.lost-qr');
+Route::get('/admin/qr-codes', [AdminController::class, 'qrCodes'])->middleware('auth')->name('admin.qr-codes');
+Route::post('/admin/qr-codes/generate/{id}', [AdminController::class, 'generateQRCode'])->middleware('auth')->name('admin.qr-codes.generate');
+Route::get('/admin/qr-codes/download/{id}', [AdminController::class, 'downloadQRCode'])->middleware('auth')->name('admin.qr-codes.download');
+Route::get('/admin/lost-qr', [AdminController::class, 'lostQr'])->middleware('auth')->name('admin.lost-qr');
+Route::post('/admin/lost-qr/report/{id}', [AdminController::class, 'reportLostQr'])->middleware('auth')->name('admin.lost-qr.report');
 Route::get('/admin/distribution', [AdminController::class, 'distribution'])->middleware('auth')->name('admin.distribution');
 Route::post('/admin/distribution', [AdminController::class, 'storeDistribution'])->middleware('auth')->name('admin.distribution.store');
 Route::put('/admin/distribution/{id}', [AdminController::class, 'updateDistribution'])->middleware('auth')->name('admin.distribution.update');

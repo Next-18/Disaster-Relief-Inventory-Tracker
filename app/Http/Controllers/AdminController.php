@@ -6,6 +6,7 @@ use App\Models\Beneficiary;
 use App\Models\Distribution;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Illuminate\Http\Request;
 
 class AdminController extends Controller
@@ -175,5 +176,77 @@ class AdminController extends Controller
         $distribution = Distribution::findOrFail($id);
         $distribution->delete();
         return redirect()->route('admin.distribution')->with('success', 'Distribution deleted successfully.');
+    }
+
+    public function qrCodes(Request $request)
+    {
+        $query = Beneficiary::where('status', 'Active')->orderBy('full_name');
+        
+        if ($request->has('search')) {
+            $search = $request->input('search');
+            $query->where(function($q) use ($search) {
+                $q->where('full_name', 'like', "%{$search}%")
+                  ->orWhere('beneficiary_no', 'like', "%{$search}%");
+            });
+        }
+        
+        $beneficiaries = $query->get();
+        
+        if ($request->ajax()) {
+            return response()->json([
+                'beneficiaries' => $beneficiaries,
+                'count' => $beneficiaries->count()
+            ]);
+        }
+        
+        return view('admin.qr-codes', compact('beneficiaries'));
+    }
+
+    public function generateQRCode($id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        $qrCodeData = $beneficiary->beneficiary_no;
+        $qrCode = QrCode::format('svg')->size(300)->errorCorrection('H')->generate($qrCodeData);
+        $fileName = 'qr_' . $beneficiary->beneficiary_no . '.svg';
+        $filePath = public_path('qr-codes/' . $fileName);
+
+        if (!file_exists(public_path('qr-codes'))) {
+            mkdir(public_path('qr-codes'), 0755, true);
+        }
+
+        file_put_contents($filePath, $qrCode);
+        $beneficiary->qr_code = $fileName;
+        $beneficiary->save();
+
+        return redirect()->route('admin.qr-codes')->with('success', 'QR code generated successfully.');
+    }
+
+    public function downloadQRCode($id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        if (!$beneficiary->qr_code) {
+            return redirect()->route('admin.qr-codes')->with('error', 'QR code not found for this beneficiary.');
+        }
+        $filePath = public_path('qr-codes/' . $beneficiary->qr_code);
+        return response()->download($filePath);
+    }
+
+    public function lostQr()
+    {
+        $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
+        return view('admin.lost-qr', compact('beneficiaries'));
+    }
+
+    public function reportLostQr(Request $request, $id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        $beneficiary->qr_code = null;
+        $beneficiary->save();
+        return redirect()->route('admin.lost-qr')->with('success', 'QR code marked as lost. A new one can be generated.');
+    }
+
+    public function regenerateQRCode($id)
+    {
+        return $this->generateQRCode($id);
     }
 }
