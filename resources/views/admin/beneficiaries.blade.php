@@ -23,7 +23,9 @@
 				<h3>Registered beneficiaries</h3>
 				<p>{{ $beneficiaries->total() }} total registered records</p>
 			</div>
-			<input class="table-search" placeholder="Search records" aria-label="Search records">
+			<form method="GET" action="{{ route('admin.beneficiaries') }}" style="display: inline;">
+				<input class="table-search" name="search" placeholder="Search records" aria-label="Search records" value="{{ request('search') }}">
+			</form>
 		</div>
 		<div class="table-wrap">
 			<table class="record-table">

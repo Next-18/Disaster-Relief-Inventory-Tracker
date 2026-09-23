@@ -57,6 +57,69 @@
                 }
             });
         }
+
+        function toggleNotifications() {
+            const panel = document.getElementById('notifications-panel');
+            const menu = document.getElementById('quick-actions-menu');
+            
+            if (panel) {
+                panel.classList.toggle('show');
+                if (menu) menu.classList.remove('show');
+            }
+        }
+
+        function toggleQuickActions() {
+            const menu = document.getElementById('quick-actions-menu');
+            const panel = document.getElementById('notifications-panel');
+            
+            if (menu) {
+                menu.classList.toggle('show');
+                if (panel) panel.classList.remove('show');
+            }
+        }
+
+        function markAllAsRead() {
+            const unreadItems = document.querySelectorAll('.notification-item.unread');
+            unreadItems.forEach(item => item.classList.remove('unread'));
+            
+            const countBadge = document.getElementById('notification-count');
+            if (countBadge) {
+                countBadge.textContent = '0';
+                countBadge.style.display = 'none';
+            }
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(event) {
+            const notificationBtn = document.querySelector('.notification-btn');
+            const quickActionsBtn = document.querySelector('.quick-actions-btn');
+            const notificationsPanel = document.getElementById('notifications-panel');
+            const quickActionsMenu = document.getElementById('quick-actions-menu');
+            
+            if (notificationsPanel && !notificationsPanel.contains(event.target) && !notificationBtn.contains(event.target)) {
+                notificationsPanel.classList.remove('show');
+            }
+            
+            if (quickActionsMenu && !quickActionsMenu.contains(event.target) && !quickActionsBtn.contains(event.target)) {
+                quickActionsMenu.classList.remove('show');
+            }
+        });
+
+        // Global search functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('global-search');
+            if (searchInput) {
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        const searchTerm = this.value.trim();
+                        if (searchTerm) {
+                            // Redirect to beneficiaries page with search
+                            window.location.href = '/admin/beneficiaries?search=' + encodeURIComponent(searchTerm);
+                        }
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>
