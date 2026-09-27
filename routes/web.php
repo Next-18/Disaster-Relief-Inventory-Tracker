@@ -33,6 +33,8 @@ Route::get('/admin/distribution', [AdminController::class, 'distribution'])->mid
 Route::post('/admin/distribution', [AdminController::class, 'storeDistribution'])->middleware('auth')->name('admin.distribution.store');
 Route::put('/admin/distribution/{id}', [AdminController::class, 'updateDistribution'])->middleware('auth')->name('admin.distribution.update');
 Route::delete('/admin/distribution/{id}', [AdminController::class, 'deleteDistribution'])->middleware('auth')->name('admin.distribution.delete');
+Route::get('/admin/reports/inventory/export', [AdminController::class, 'exportInventoryReport'])->middleware('auth')->name('admin.reports.inventory-export');
+Route::get('/admin/reports/export', [AdminController::class, 'exportReport'])->middleware('auth')->name('admin.reports.export');
 Route::get('/admin/reports', [AdminController::class, 'reports'])->middleware('auth')->name('admin.reports');
 Route::get('/admin/audit-logs', [AdminController::class, 'auditLogs'])->middleware('auth')->name('admin.audit-logs');
 Route::match(['get', 'post'], '/admin/settings', [AdminController::class, 'settings'])->middleware('auth')->name('admin.settings');

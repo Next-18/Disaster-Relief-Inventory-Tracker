@@ -42,7 +42,6 @@ class AdminTopbarTest extends TestCase
         Distribution::create([
             'beneficiary_id' => $beneficiary->id,
             'package_id' => $package->id,
-            'package_name' => $package->package_name,
             'date_released' => now()->toDateString(),
             'status' => 'Released',
             'distributed_by' => $user->id,
@@ -92,7 +91,6 @@ class AdminTopbarTest extends TestCase
         Distribution::create([
             'beneficiary_id' => $beneficiary->id,
             'package_id' => $package->id,
-            'package_name' => $package->package_name,
             'date_released' => now()->toDateString(),
             'status' => 'Released',
             'distributed_by' => $user->id,

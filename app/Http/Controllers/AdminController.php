@@ -8,6 +8,8 @@ use App\Models\Distribution;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use SimpleSoftwareIO\QrCode\Facades\QrCode as QRCodeGenerator;
 use Illuminate\Http\Request;
@@ -377,7 +379,6 @@ class AdminController extends Controller
             ->where(function ($query) use ($like) {
                 $query->where('status', 'like', $like)
                     ->orWhere('notes', 'like', $like)
-                    ->orWhere('package_name', 'like', $like)
                     ->orWhereHas('beneficiary', function ($beneficiaryQuery) use ($like) {
                         $beneficiaryQuery->where('full_name', 'like', $like)
                             ->orWhere('beneficiary_no', 'like', $like);
@@ -456,7 +457,6 @@ class AdminController extends Controller
                 $like = "%{$search}%";
                 $distributions->where('status', 'like', $like)
                     ->orWhere('notes', 'like', $like)
-                    ->orWhere('package_name', 'like', $like)
                     ->orWhereHas('beneficiary', function ($beneficiaries) use ($like) {
                         $beneficiaries->where('full_name', 'like', $like)
                             ->orWhere('beneficiary_no', 'like', $like);
@@ -592,52 +592,234 @@ class AdminController extends Controller
         return $this->generateQRCode($id);
     }
 
+    protected function validateReportFilters(Request $request): array
+    {
+        return $request->validate([
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
+            'status' => ['nullable', 'in:all,Released,Pending'],
+        ]);
+    }
+
+    protected function distributionReportQuery(?string $startDate, ?string $endDate): Builder
+    {
+        return Distribution::query()
+            ->when($startDate, fn (Builder $query) => $query->whereDate('date_released', '>=', $startDate))
+            ->when($endDate, fn (Builder $query) => $query->whereDate('date_released', '<=', $endDate));
+    }
+
     public function reports(Request $request)
     {
-        $reportType = $request->input('report_type', 'distribution');
-        $startDate = $request->input('start_date');
-        $endDate = $request->input('end_date');
-        
-        $query = Distribution::with(['beneficiary', 'reliefPackage']);
-        
-        if ($startDate) {
-            $query->where('date_released', '>=', $startDate);
+        $filters = $this->validateReportFilters($request);
+        $startDate = $filters['start_date'] ?? null;
+        $endDate = $filters['end_date'] ?? null;
+        $status = $filters['status'] ?? 'all';
+
+        // Period totals intentionally ignore the table's status filter so users can compare released and pending work.
+        $periodQuery = $this->distributionReportQuery($startDate, $endDate);
+        $totalDistributions = (clone $periodQuery)->count();
+        $releasedCount = (clone $periodQuery)->where('status', 'Released')->count();
+        $pendingCount = (clone $periodQuery)->where('status', 'Pending')->count();
+        $releaseRate = $totalDistributions > 0 ? round(($releasedCount / $totalDistributions) * 100, 1) : 0;
+
+        $chartEnd = Carbon::parse($endDate ?? now()->toDateString())->endOfMonth();
+        $chartStart = $startDate
+            ? Carbon::parse($startDate)->startOfMonth()
+            : $chartEnd->copy()->subMonths(11)->startOfMonth();
+
+        if ($startDate && !$endDate && $chartStart->greaterThan($chartEnd)) {
+            $chartEnd = $chartStart->copy()->addMonths(11)->endOfMonth();
         }
-        
-        if ($endDate) {
-            $query->where('date_released', '<=', $endDate);
+
+        $chartMonthCount = (($chartEnd->year - $chartStart->year) * 12) + $chartEnd->month - $chartStart->month + 1;
+        $chartWasTruncated = $chartMonthCount > 12;
+        if ($chartWasTruncated) {
+            $chartStart = $chartEnd->copy()->subMonths(11)->startOfMonth();
         }
-        
-        $distributions = $query->latest()->get();
-        
-        // Calculate statistics
-        $totalDistributions = $distributions->count();
-        $releasedCount = $distributions->where('status', 'Released')->count();
-        $pendingCount = $distributions->where('status', 'Pending')->count();
-        
-        // Inventory statistics
-        $totalItems = InventoryItem::sum('quantity');
+
+        $monthlyTrend = [];
+        $monthCursor = $chartStart->copy()->startOfMonth();
+        $lastChartMonth = $chartEnd->copy()->startOfMonth();
+        while ($monthCursor->lessThanOrEqualTo($lastChartMonth)) {
+            $monthKey = $monthCursor->format('Y-m');
+            $monthlyTrend[$monthKey] = [
+                'label' => $monthCursor->format('M y'),
+                'released' => 0,
+                'pending' => 0,
+                'other' => 0,
+                'total' => 0,
+            ];
+            $monthCursor->addMonth();
+        }
+
+        $trendRows = (clone $periodQuery)
+            ->whereDate('date_released', '>=', $chartStart->toDateString())
+            ->whereDate('date_released', '<=', $chartEnd->toDateString())
+            ->selectRaw('DATE(date_released) as report_day, status, COUNT(*) as distribution_count')
+            ->groupBy('report_day', 'status')
+            ->get();
+
+        foreach ($trendRows as $trendRow) {
+            $monthKey = Carbon::parse($trendRow->report_day)->format('Y-m');
+            if (!isset($monthlyTrend[$monthKey])) {
+                continue;
+            }
+
+            $count = (int) $trendRow->distribution_count;
+            $statusKey = match ($trendRow->status) {
+                'Released' => 'released',
+                'Pending' => 'pending',
+                default => 'other',
+            };
+            $monthlyTrend[$monthKey][$statusKey] += $count;
+            $monthlyTrend[$monthKey]['total'] += $count;
+        }
+
+        $chartMaxCount = max(1, ...array_column($monthlyTrend, 'total'));
+        $chartHasActivity = array_sum(array_column($monthlyTrend, 'total')) > 0;
+        $chartPeriodLabel = $chartWasTruncated
+            ? 'Latest 12 months in the selected period'
+            : (($startDate || $endDate) ? 'Selected period by month' : 'Most recent 12 months');
+
+        $distributionQuery = (clone $periodQuery)->with(['beneficiary', 'reliefPackage', 'distributor']);
+        if ($status !== 'all') {
+            $distributionQuery->where('status', $status);
+        }
+        $distributions = $distributionQuery
+            ->orderByDesc('date_released')
+            ->orderByDesc('id')
+            ->paginate(20, ['*'], 'distribution_page')
+            ->withQueryString();
+
+        $inventoryItems = InventoryItem::query()
+            ->orderBy('category')
+            ->orderBy('item_name')
+            ->paginate(10, ['*'], 'inventory_page')
+            ->withQueryString();
+        $inventoryRecordCount = InventoryItem::count();
+        $totalUnits = (int) InventoryItem::sum('quantity');
         $lowStockItems = InventoryItem::lowStock()->count();
-        
-        // Beneficiary statistics
+        $healthyStockItems = max(0, $inventoryRecordCount - $lowStockItems);
+        $lowStockShare = $inventoryRecordCount > 0
+            ? round(($lowStockItems / $inventoryRecordCount) * 100, 4)
+            : 0;
+
         $totalBeneficiaries = Beneficiary::count();
         $activeBeneficiaries = Beneficiary::where('status', 'Active')->count();
+        $inactiveBeneficiaries = Beneficiary::where('status', 'Inactive')->count();
         $qrGeneratedCount = Beneficiary::whereNotNull('qr_code')->count();
-        
+
+        $periodLabel = match (true) {
+            $startDate && $endDate => Carbon::parse($startDate)->format('M j, Y') . ' – ' . Carbon::parse($endDate)->format('M j, Y'),
+            $startDate => 'From ' . Carbon::parse($startDate)->format('M j, Y'),
+            $endDate => 'Through ' . Carbon::parse($endDate)->format('M j, Y'),
+            default => 'All dates',
+        };
+
         return view('admin.reports', compact(
             'distributions',
-            'reportType',
             'startDate',
             'endDate',
+            'status',
+            'periodLabel',
             'totalDistributions',
             'releasedCount',
             'pendingCount',
-            'totalItems',
+            'releaseRate',
+            'monthlyTrend',
+            'chartMaxCount',
+            'chartHasActivity',
+            'chartPeriodLabel',
+            'inventoryItems',
+            'inventoryRecordCount',
+            'totalUnits',
             'lowStockItems',
+            'healthyStockItems',
+            'lowStockShare',
             'totalBeneficiaries',
             'activeBeneficiaries',
+            'inactiveBeneficiaries',
             'qrGeneratedCount'
         ));
+    }
+
+    public function exportReport(Request $request)
+    {
+        $filters = $this->validateReportFilters($request);
+        $query = $this->distributionReportQuery(
+            $filters['start_date'] ?? null,
+            $filters['end_date'] ?? null
+        );
+        $status = $filters['status'] ?? 'all';
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        $filename = 'distribution-report-' . now()->format('Y-m-d') . '.csv';
+
+        return response()->streamDownload(function () use ($query): void {
+            $output = fopen('php://output', 'w');
+            fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, ['Distribution ID', 'Date Released', 'Beneficiary Number', 'Beneficiary', 'Relief Package', 'Status', 'Recorded By', 'Notes'], ',', '"', '');
+
+            $query->with(['beneficiary', 'reliefPackage', 'distributor'])
+                ->orderByDesc('date_released')
+                ->orderByDesc('id')
+                ->chunk(500, function ($rows) use ($output): void {
+                    foreach ($rows as $distribution) {
+                        $values = [
+                            $distribution->id,
+                            $distribution->date_released?->format('Y-m-d'),
+                            $distribution->beneficiary?->beneficiary_no ?? '',
+                            $distribution->beneficiary?->full_name ?? 'Unknown beneficiary',
+                            $distribution->reliefPackage?->package_name ?? 'Unknown package',
+                            $distribution->status,
+                            $distribution->distributor?->name ?? '',
+                            $distribution->notes ?? '',
+                        ];
+
+                        fputcsv($output, array_map(static function ($value): string {
+                            $value = (string) ($value ?? '');
+                            return preg_match('/^[\x00-\x20]*[=+\-@]/', $value) ? "'{$value}" : $value;
+                        }, $values), ',', '"', '');
+                    }
+                });
+
+            fclose($output);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function exportInventoryReport()
+    {
+        $filename = 'inventory-snapshot-' . now()->format('Y-m-d') . '.csv';
+
+        return response()->streamDownload(function (): void {
+            $output = fopen('php://output', 'w');
+            fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, ['Item ID', 'Item', 'Category', 'Quantity on Hand', 'Unit', 'Minimum Stock', 'Stock Status'], ',', '"', '');
+
+            InventoryItem::query()->orderBy('id')->chunk(500, function ($items) use ($output): void {
+                foreach ($items as $item) {
+                    $values = [
+                        $item->id,
+                        $item->item_name,
+                        $item->category,
+                        $item->quantity,
+                        $item->unit,
+                        $item->minimum_stock,
+                        $item->status,
+                    ];
+
+                    fputcsv($output, array_map(static function ($value): string {
+                        $value = (string) ($value ?? '');
+                        return preg_match('/^[\x00-\x20]*[=+\-@]/', $value) ? "'{$value}" : $value;
+                    }, $values), ',', '"', '');
+                }
+            });
+
+            fclose($output);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function auditLogs(Request $request)

@@ -52,7 +52,7 @@
                                             <strong>{{ $item->package_name }}</strong>
                                             <small>{{ $item->category }} · {{ $item->status }}</small>
                                         @else
-                                            <strong>{{ $item->beneficiary?->full_name ?? 'Unknown beneficiary' }} · {{ $item->reliefPackage?->package_name ?? $item->package_name ?? 'Unknown package' }}</strong>
+                                            <strong>{{ $item->beneficiary?->full_name ?? 'Unknown beneficiary' }} · {{ $item->reliefPackage?->package_name ?? 'Unknown package' }}</strong>
                                             <small>{{ $item->date_released?->format('M d, Y') }} · {{ $item->status }}</small>
                                         @endif
                                     </span>

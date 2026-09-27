@@ -54,14 +54,13 @@ class AppServiceProvider extends ServiceProvider
                 ->get(['id', 'beneficiary_id', 'package_id', 'date_released', 'status'])
                 ->map(function (Distribution $distribution): array {
                     $searchTerm = $distribution->beneficiary?->full_name
-                        ?? $distribution->reliefPackage?->package_name
-                        ?? $distribution->package_name;
+                        ?? $distribution->reliefPackage?->package_name;
 
                     return [
                         'id' => "distribution:{$distribution->id}",
                         'kind' => 'distribution',
                         'title' => 'Distribution recorded',
-                        'message' => trim(($distribution->reliefPackage?->package_name ?? $distribution->package_name ?? 'Relief package') . ' to ' . ($distribution->beneficiary?->full_name ?? 'a beneficiary')),
+                        'message' => trim(($distribution->reliefPackage?->package_name ?? 'Relief package') . ' to ' . ($distribution->beneficiary?->full_name ?? 'a beneficiary')),
                         'time' => $distribution->date_released,
                         'url' => $searchTerm
                             ? route('admin.distribution', ['search' => $searchTerm])
