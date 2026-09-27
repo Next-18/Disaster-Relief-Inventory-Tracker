@@ -8,6 +8,7 @@ use App\Models\Distribution;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
+use Illuminate\Support\Facades\DB;
 use SimpleSoftwareIO\QrCode\Facades\QrCode as QRCodeGenerator;
 use Illuminate\Http\Request;
 
@@ -25,51 +26,132 @@ class AdminController extends Controller
         ]);
     }
 
-    public function beneficiaries(Request $request)
+    protected function applyBeneficiaryFilters($query, Request $request)
     {
-        $query = Beneficiary::latest();
-        
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->input('search');
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('full_name', 'like', "%{$search}%")
                   ->orWhere('beneficiary_no', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%");
+                  ->orWhere('address', 'like', "%{$search}%")
+                  ->orWhere('contact_number', 'like', "%{$search}%");
             });
         }
-        
-        return view('admin.beneficiaries', ['beneficiaries' => $query->paginate(10)]);
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('priority_type') && $request->priority_type !== 'all') {
+            $query->where('priority_type', $request->priority_type);
+        }
+
+        if ($request->boolean('priority_only')) {
+            $query->where('priority_type', '!=', 'Regular');
+        }
+
+        return $query;
+    }
+
+    public function beneficiaries(Request $request)
+    {
+        $query = Beneficiary::query();
+        $this->applyBeneficiaryFilters($query, $request);
+
+        $sortField = $request->get('sort', 'created_at');
+        $sortDirection = $request->get('direction') === 'asc' ? 'asc' : 'desc';
+        $perPage = in_array((int) $request->get('per_page'), [10, 25, 50], true) ? (int) $request->get('per_page') : 10;
+
+        if (in_array($sortField, ['full_name', 'beneficiary_no', 'created_at', 'household_size', 'priority_type', 'status'])) {
+            $query->orderBy($sortField, $sortDirection);
+        } else {
+            $query->latest();
+        }
+
+        $beneficiaries = $query->paginate($perPage)->withQueryString();
+        if ($beneficiaries->currentPage() > $beneficiaries->lastPage()) {
+            return redirect()->route('admin.beneficiaries', array_merge(
+                $request->query(),
+                ['page' => max($beneficiaries->lastPage(), 1)]
+            ));
+        }
+
+        $totalBeneficiaries = Beneficiary::count();
+        $activeBeneficiaries = Beneficiary::where('status', 'Active')->count();
+        $inactiveBeneficiaries = Beneficiary::where('status', 'Inactive')->count();
+        $priorityHouseholds = Beneficiary::where('priority_type', '!=', 'Regular')->count();
+
+        return view('admin.beneficiaries', compact(
+            'beneficiaries',
+            'totalBeneficiaries',
+            'activeBeneficiaries',
+            'inactiveBeneficiaries',
+            'priorityHouseholds'
+        ));
+    }
+
+    protected function beneficiaryValidationRules($id = null): array
+    {
+        return [
+            'full_name' => ['required', 'string', 'max:255'],
+            'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-\s()]*$/'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'priority_type' => ['required', 'in:Regular,Senior Citizen,PWD,Solo Parent'],
+            'status' => ['required', 'in:Active,Inactive'],
+        ];
     }
 
     public function storeBeneficiary(Request $request)
     {
-        $data = $request->validate([
-            'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['nullable', 'string', 'max:30'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
-            'priority_type' => ['required', 'string', 'max:50'],
-        ]);
+        $data = $request->validate($this->beneficiaryValidationRules());
+        
+        // Check for duplicate name
+        $existingByName = Beneficiary::where('full_name', $data['full_name'])->first();
+        if ($existingByName) {
+            return back()->withInput()->withErrors(['full_name' => 'A beneficiary with this name already exists.']);
+        }
+        
+        // Check for duplicate contact number
+        if (!empty($data['contact_number'])) {
+            $existingByPhone = Beneficiary::where('contact_number', $data['contact_number'])->first();
+            if ($existingByPhone) {
+                return back()->withInput()->withErrors(['contact_number' => 'A beneficiary with this contact number already exists.']);
+            }
+        }
+        
         $data['beneficiary_no'] = 'BEN-' . str_pad((string) ((Beneficiary::max('id') ?? 0) + 1001), 4, '0', STR_PAD_LEFT);
         $beneficiary = Beneficiary::create($data);
         $this->logAudit('create', 'beneficiaries', "Created beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
-        return redirect()->route('admin.beneficiaries')->with('success', 'Beneficiary added successfully.');
+        return redirect()->back()->with('success', 'Beneficiary added successfully.');
     }
 
     public function updateBeneficiary(Request $request, $id)
     {
         $beneficiary = Beneficiary::findOrFail($id);
-        $data = $request->validate([
-            'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['nullable', 'string', 'max:30'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
-            'priority_type' => ['required', 'string', 'max:50'],
-            'status' => ['required', 'string', 'max:20'],
-        ]);
+        $data = $request->validate($this->beneficiaryValidationRules($id));
+        
+        // Check for duplicate name (excluding current record)
+        $existingByName = Beneficiary::where('full_name', $data['full_name'])
+            ->where('id', '!=', $id)
+            ->first();
+        if ($existingByName) {
+            return back()->withInput()->withErrors(['full_name' => 'A beneficiary with this name already exists.']);
+        }
+        
+        // Check for duplicate contact number (excluding current record)
+        if (!empty($data['contact_number'])) {
+            $existingByPhone = Beneficiary::where('contact_number', $data['contact_number'])
+                ->where('id', '!=', $id)
+                ->first();
+            if ($existingByPhone) {
+                return back()->withInput()->withErrors(['contact_number' => 'A beneficiary with this contact number already exists.']);
+            }
+        }
+        
         $beneficiary->update($data);
         $this->logAudit('update', 'beneficiaries', "Updated beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
-        return redirect()->route('admin.beneficiaries')->with('success', 'Beneficiary updated successfully.');
+        return redirect()->back()->with('success', 'Beneficiary updated successfully.');
     }
 
     public function deleteBeneficiary($id)
@@ -79,24 +161,156 @@ class AdminController extends Controller
         $beneficiaryNo = $beneficiary->beneficiary_no;
         $beneficiary->delete();
         $this->logAudit('delete', 'beneficiaries', "Deleted beneficiary: {$beneficiaryName} ({$beneficiaryNo})");
-        return redirect()->route('admin.beneficiaries')->with('success', 'Beneficiary deleted successfully.');
+        return redirect()->back()->with('success', 'Beneficiary deleted successfully.');
     }
 
-    public function inventory()
+    public function bulkDeleteBeneficiaries(Request $request)
     {
-        return view('admin.inventory', ['items' => InventoryItem::orderBy('item_name')->paginate(10)]);
+        $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['required', 'integer', 'min:1', 'distinct'],
+        ]);
+
+        $beneficiaries = DB::transaction(function () use ($request) {
+            $beneficiaries = Beneficiary::whereIn('id', $request->input('ids'))->get();
+
+            foreach ($beneficiaries as $beneficiary) {
+                $beneficiary->delete();
+            }
+
+            return $beneficiaries;
+        });
+        
+        $this->logAudit('delete', 'beneficiaries', "Bulk deleted beneficiaries: " . count($beneficiaries) . " records");
+        return redirect()->back()->with('success', count($beneficiaries) . ' beneficiaries deleted successfully.');
+    }
+
+    public function bulkStatusChange(Request $request)
+    {
+        $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['required', 'integer', 'min:1', 'distinct'],
+            'status' => ['required', 'in:Active,Inactive'],
+        ]);
+
+        $ids = $request->input('ids');
+        $status = $request->input('status');
+
+        $updated = Beneficiary::whereIn('id', $ids)->update(['status' => $status]);
+        
+        $this->logAudit('update', 'beneficiaries', "Bulk status change to {$status}: {$updated} beneficiaries");
+        return redirect()->back()->with('success', $updated . ' beneficiaries updated successfully.');
+    }
+
+    public function exportBeneficiaries(Request $request)
+    {
+        $query = Beneficiary::query();
+        $this->applyBeneficiaryFilters($query, $request);
+        $beneficiaries = $query->orderBy('full_name')->get();
+        
+        $filename = 'beneficiaries_' . date('Y-m-d') . '.csv';
+        
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+        
+        $callback = function() use ($beneficiaries) {
+            $handle = fopen('php://output', 'w');
+            
+            // Add CSV headers
+            fputcsv($handle, ['Beneficiary No', 'Full Name', 'Contact Number', 'Address', 'Household Size', 'Priority Type', 'Status', 'Created At']);
+            
+            // Add data rows
+            foreach ($beneficiaries as $beneficiary) {
+                fputcsv($handle, [
+                    $beneficiary->beneficiary_no,
+                    $beneficiary->full_name,
+                    $beneficiary->contact_number ?? '',
+                    $beneficiary->address ?? '',
+                    $beneficiary->household_size ?? '',
+                    $beneficiary->priority_type,
+                    $beneficiary->status,
+                    $beneficiary->created_at->format('Y-m-d H:i:s')
+                ]);
+            }
+            
+            fclose($handle);
+        };
+        
+        $this->logAudit('export', 'beneficiaries', "Exported beneficiaries: " . count($beneficiaries) . " records");
+        
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function inventory(Request $request)
+    {
+        $query = InventoryItem::query();
+        $search = trim((string) $request->input('search', ''));
+        $stockStatus = $request->input('stock_status', 'all');
+
+        if ($search !== '') {
+            $query->where(function ($items) use ($search) {
+                $items->where('item_name', 'like', "%{$search}%")
+                    ->orWhere('category', 'like', "%{$search}%")
+                    ->orWhere('unit', 'like', "%{$search}%");
+            });
+        }
+
+        if ($stockStatus === 'low') {
+            $query->lowStock();
+        } elseif ($stockStatus === 'available') {
+            $query->whereColumn('quantity', '>', 'minimum_stock');
+        }
+
+        $perPage = in_array((int) $request->input('per_page'), [10, 25, 50], true)
+            ? (int) $request->input('per_page')
+            : 10;
+        $items = $query->orderBy('item_name')->paginate($perPage)->withQueryString();
+
+        if ($items->currentPage() > $items->lastPage()) {
+            return redirect()->route('admin.inventory', array_merge(
+                $request->query(),
+                ['page' => max($items->lastPage(), 1)]
+            ));
+        }
+
+        $totalInventoryItems = InventoryItem::count();
+        $lowStockCount = InventoryItem::lowStock()->count();
+        $categoryCount = InventoryItem::query()->distinct()->count('category');
+
+        return view('admin.inventory', compact(
+            'items',
+            'totalInventoryItems',
+            'lowStockCount',
+            'categoryCount'
+        ));
+    }
+
+    protected function inventoryValidationRules(): array
+    {
+        return [
+            'item_name' => ['required', 'string', 'max:255'],
+            'category' => ['required', 'string', 'max:60'],
+            'quantity' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            'unit' => ['required', 'string', 'max:30'],
+            'minimum_stock' => ['required', 'integer', 'min:0', 'max:4294967295'],
+        ];
+    }
+
+    protected function validatedInventoryData(Request $request): array
+    {
+        $data = $request->validate($this->inventoryValidationRules());
+        $data['quantity'] = (int) $data['quantity'];
+        $data['minimum_stock'] = (int) $data['minimum_stock'];
+        $data['status'] = $data['quantity'] <= $data['minimum_stock'] ? 'Low Stock' : 'In Stock';
+
+        return $data;
     }
 
     public function storeInventory(Request $request)
     {
-        $data = $request->validate([
-            'item_name' => ['required', 'string', 'max:255'],
-            'category' => ['required', 'string', 'max:60'],
-            'quantity' => ['required', 'integer', 'min:0'],
-            'unit' => ['required', 'string', 'max:30'],
-            'minimum_stock' => ['required', 'integer', 'min:0'],
-        ]);
-        $data['status'] = $data['quantity'] <= $data['minimum_stock'] ? 'Low Stock' : 'In Stock';
+        $data = $this->validatedInventoryData($request);
         $item = InventoryItem::create($data);
         $this->logAudit('create', 'inventory', "Added inventory item: {$item->item_name} (Qty: {$item->quantity} {$item->unit})");
         return redirect()->route('admin.inventory')->with('success', 'Inventory item added successfully.');
@@ -105,14 +319,7 @@ class AdminController extends Controller
     public function updateInventory(Request $request, $id)
     {
         $item = InventoryItem::findOrFail($id);
-        $data = $request->validate([
-            'item_name' => ['required', 'string', 'max:255'],
-            'category' => ['required', 'string', 'max:60'],
-            'quantity' => ['required', 'integer', 'min:0'],
-            'unit' => ['required', 'string', 'max:30'],
-            'minimum_stock' => ['required', 'integer', 'min:0'],
-        ]);
-        $data['status'] = $data['quantity'] <= $data['minimum_stock'] ? 'Low Stock' : 'In Stock';
+        $data = $this->validatedInventoryData($request);
         $item->update($data);
         $this->logAudit('update', 'inventory', "Updated inventory item: {$item->item_name} (Qty: {$item->quantity} {$item->unit})");
         return redirect()->route('admin.inventory')->with('success', 'Inventory item updated successfully.');
@@ -263,7 +470,7 @@ class AdminController extends Controller
         $beneficiary->save();
         $this->logAudit('create', 'qr-codes', "Generated QR code for beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
 
-        return redirect()->route('admin.qr-codes')->with('success', 'QR code generated successfully.');
+        return redirect()->back()->with('success', 'QR code generated successfully.');
     }
 
     public function downloadQRCode($id)
@@ -319,9 +526,8 @@ class AdminController extends Controller
         $pendingCount = $distributions->where('status', 'Pending')->count();
         
         // Inventory statistics
-        $inventoryItems = InventoryItem::all();
-        $totalItems = $inventoryItems->sum('quantity');
-        $lowStockItems = $inventoryItems->where('status', 'Low Stock')->count();
+        $totalItems = InventoryItem::sum('quantity');
+        $lowStockItems = InventoryItem::lowStock()->count();
         
         // Beneficiary statistics
         $totalBeneficiaries = Beneficiary::count();

@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Beneficiary;
 use App\Models\Distribution;
+use App\Models\InventoryItem;
+use App\Models\ReliefPackage;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -24,8 +28,44 @@ class AuthController extends Controller
     }
 
     public function dashboard() { 
-        $recentDistributions = Distribution::with('beneficiary')->latest()->take(4)->get();
-        return view('dashboard', compact('recentDistributions')); 
+        // Calculate real statistics
+        $totalBeneficiaries = Beneficiary::count();
+        $activeBeneficiaries = Beneficiary::where('status', 'Active')->count();
+        $newThisMonth = Beneficiary::where('created_at', '>=', now()->startOfMonth())->count();
+        
+        $availablePackages = ReliefPackage::where('status', 'Available')->count();
+        $totalPackages = ReliefPackage::count();
+        
+        $distributedThisMonth = Distribution::where('date_released', '>=', now()->startOfMonth())->count();
+        $totalDistributions = Distribution::count();
+        
+        $stockAlertsCount = InventoryItem::lowStock()->count();
+        $lowStockItems = InventoryItem::lowStock()
+            ->orderBy('quantity')
+            ->orderBy('item_name')
+            ->limit(5)
+            ->get();
+        
+        $recentDistributions = Distribution::with(['beneficiary', 'reliefPackage'])->latest()->take(4)->get();
+        
+        // Get location from settings
+        $barangayName = Setting::get('barangay_name', 'Barangay');
+        $municipality = Setting::get('municipality', 'Municipality');
+        $location = "{$barangayName}, {$municipality}";
+        
+        return view('dashboard', compact(
+            'recentDistributions',
+            'totalBeneficiaries',
+            'activeBeneficiaries',
+            'newThisMonth',
+            'availablePackages',
+            'totalPackages',
+            'distributedThisMonth',
+            'totalDistributions',
+            'lowStockItems',
+            'stockAlertsCount',
+            'location'
+        )); 
     }
 
     public function module(string $module)

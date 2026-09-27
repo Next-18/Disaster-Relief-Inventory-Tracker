@@ -12,6 +12,9 @@ Route::get('/admin/beneficiaries', [AdminController::class, 'beneficiaries'])->m
 Route::post('/admin/beneficiaries', [AdminController::class, 'storeBeneficiary'])->middleware('auth')->name('admin.beneficiaries.store');
 Route::put('/admin/beneficiaries/{id}', [AdminController::class, 'updateBeneficiary'])->middleware('auth')->name('admin.beneficiaries.update');
 Route::delete('/admin/beneficiaries/{id}', [AdminController::class, 'deleteBeneficiary'])->middleware('auth')->name('admin.beneficiaries.delete');
+Route::post('/admin/beneficiaries/bulk-delete', [AdminController::class, 'bulkDeleteBeneficiaries'])->middleware('auth')->name('admin.beneficiaries.bulk-delete');
+Route::post('/admin/beneficiaries/bulk-status', [AdminController::class, 'bulkStatusChange'])->middleware('auth')->name('admin.beneficiaries.bulk-status');
+Route::get('/admin/beneficiaries/export', [AdminController::class, 'exportBeneficiaries'])->middleware('auth')->name('admin.beneficiaries.export');
 Route::get('/admin/inventory', [AdminController::class, 'inventory'])->middleware('auth')->name('admin.inventory');
 Route::post('/admin/inventory', [AdminController::class, 'storeInventory'])->middleware('auth')->name('admin.inventory.store');
 Route::put('/admin/inventory/{id}', [AdminController::class, 'updateInventory'])->middleware('auth')->name('admin.inventory.update');

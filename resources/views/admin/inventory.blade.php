@@ -10,7 +10,7 @@
             <h2>Relief inventory</h2>
             <p>Monitor available supplies and minimum stock levels.</p>
         </div>
-        <button class="add-button" type="button" onclick="document.getElementById('inventory-modal').showModal()"><span>+</span> Add item</button>
+        <button class="add-button" type="button" id="open-add-inventory"><span>+</span> Add item</button>
     </section>
 
     @if(session('success'))
@@ -18,18 +18,40 @@
     @endif
 
     <div class="inventory-summary">
-        <div><small>Total items</small><b>{{ $items->total() }}</b></div>
-        <div><small>Low stock items</small><b>{{ $items->where('status', 'Low Stock')->count() }}</b></div>
-        <div><small>Categories</small><b>{{ $items->pluck('category')->unique()->count() }}</b></div>
+        <div><small>Stock records</small><b>{{ number_format($totalInventoryItems) }}</b></div>
+        <div><small>Low stock records</small><b>{{ number_format($lowStockCount) }}</b></div>
+        <div><small>Categories</small><b>{{ number_format($categoryCount) }}</b></div>
     </div>
 
     <section class="panel record-panel">
         <div class="panel-heading">
             <div>
                 <h3>Stock list</h3>
-                <p>Current warehouse and supply inventory</p>
+                <p>
+                    @if($items->total() > 0)
+                        Showing {{ $items->firstItem() }}–{{ $items->lastItem() }} of {{ $items->total() }} matching records
+                    @else
+                        No records to display
+                    @endif
+                </p>
             </div>
-            <input class="table-search" placeholder="Search items" aria-label="Search items">
+            <form method="GET" action="{{ route('admin.inventory') }}" class="inventory-filter-form">
+                <input type="search" class="table-search inventory-search" name="search" value="{{ request('search') }}" placeholder="Search name, category, unit" aria-label="Search inventory">
+                <select name="stock_status" class="filter-select inventory-select" aria-label="Filter by stock status">
+                    <option value="all" {{ request('stock_status', 'all') === 'all' ? 'selected' : '' }}>All stock</option>
+                    <option value="low" {{ request('stock_status') === 'low' ? 'selected' : '' }}>Low stock</option>
+                    <option value="available" {{ request('stock_status') === 'available' ? 'selected' : '' }}>Above minimum</option>
+                </select>
+                <select name="per_page" class="filter-select inventory-select" aria-label="Rows per page">
+                    @foreach([10, 25, 50] as $size)
+                        <option value="{{ $size }}" {{ (int) request('per_page', 10) === $size ? 'selected' : '' }}>{{ $size }} / page</option>
+                    @endforeach
+                </select>
+                <button type="submit" class="action-btn">Search</button>
+                @if(request()->filled('search') || (request('stock_status') && request('stock_status') !== 'all'))
+                    <a href="{{ route('admin.inventory') }}" class="filter-clear">Clear</a>
+                @endif
+            </form>
         </div>
         <div class="table-wrap">
             <table class="record-table">
@@ -45,7 +67,7 @@
                 </thead>
                 <tbody>
                     @forelse($items as $item)
-                        <tr>
+                        <tr class="{{ $item->status === 'Low Stock' ? 'inventory-row-low' : '' }}">
                             <td>
                                 <b>{{ $item->item_name }}</b>
                                 <small>Last updated {{ $item->updated_at->format('M d, Y') }}</small>
@@ -55,16 +77,35 @@
                             <td>{{ $item->minimum_stock }} {{ $item->unit }}</td>
                             <td><span class="tag {{ $item->status === 'Low Stock' ? 'warning' : 'success' }}">{{ $item->status }}</span></td>
                             <td>
-                                <button type="button" onclick="editInventory({{ $item->id }}, '{{ $item->item_name }}', '{{ $item->category }}', {{ $item->quantity }}, '{{ $item->unit }}', {{ $item->minimum_stock }})" class="action-btn">Edit</button>
-                                <button type="button" onclick="deleteInventory({{ $item->id }})" class="action-btn delete">Delete</button>
+                                <div class="inventory-row-actions">
+                                    <button type="button" class="action-btn edit-inventory-btn"
+                                        data-id="{{ $item->id }}"
+                                        data-name="{{ $item->item_name }}"
+                                        data-category="{{ $item->category }}"
+                                        data-quantity="{{ $item->quantity }}"
+                                        data-unit="{{ $item->unit }}"
+                                        data-minimum-stock="{{ $item->minimum_stock }}">Edit</button>
+                                    <button type="button" class="action-btn delete delete-inventory-btn" data-id="{{ $item->id }}" data-name="{{ $item->item_name }}">Delete</button>
+                                </div>
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="6" class="empty-cell">No inventory items yet.</td></tr>
+                        <tr>
+                            <td colspan="6" class="empty-cell">
+                                @if(request()->filled('search') || (request('stock_status') && request('stock_status') !== 'all'))
+                                    No inventory items match these filters. <a href="{{ route('admin.inventory') }}">Clear filters</a>
+                                @else
+                                    No inventory items yet.
+                                @endif
+                            </td>
+                        </tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
+        @if($items->hasPages())
+            <div class="pagination-wrap">{{ $items->links() }}</div>
+        @endif
     </section>
 @endsection
 
@@ -79,15 +120,30 @@
         </div>
         <form id="inventory-form" method="POST" action="{{ route('admin.inventory.store') }}">
             @csrf
-            <input type="hidden" name="_method" id="form-method" value="POST">
-            <input type="hidden" name="id" id="item-id">
-            <label>Item name<input name="item_name" id="item_name" value="{{ old('item_name') }}" required></label>
-            <label>Category<input name="category" id="category" value="{{ old('category') }}" placeholder="e.g. Food supplies" required></label>
+            <input type="hidden" name="_method" id="form-method" value="{{ old('_method', 'POST') }}">
+            <input type="hidden" name="id" id="item-id" value="{{ old('id') }}">
+            <label>Item name
+                <input name="item_name" id="item_name" value="{{ old('item_name') }}" maxlength="255" placeholder="e.g. Rice" class="@error('item_name') input-error @enderror" required>
+                @error('item_name')<span class="field-error">{{ $message }}</span>@enderror
+            </label>
+            <label>Category
+                <input name="category" id="category" value="{{ old('category') }}" maxlength="60" placeholder="e.g. Food supplies" class="@error('category') input-error @enderror" required>
+                @error('category')<span class="field-error">{{ $message }}</span>@enderror
+            </label>
             <div class="form-row">
-                <label>Quantity<input name="quantity" type="number" min="0" id="quantity" value="{{ old('quantity', 0) }}" required></label>
-                <label>Unit<input name="unit" id="unit" value="{{ old('unit', 'pcs') }}" required></label>
+                <label>Quantity
+                    <input name="quantity" type="number" min="0" max="4294967295" step="1" id="quantity" value="{{ old('quantity', 0) }}" class="@error('quantity') input-error @enderror" required>
+                    @error('quantity')<span class="field-error">{{ $message }}</span>@enderror
+                </label>
+                <label>Unit
+                    <input name="unit" id="unit" value="{{ old('unit', 'pcs') }}" maxlength="30" placeholder="e.g. bags" class="@error('unit') input-error @enderror" required>
+                    @error('unit')<span class="field-error">{{ $message }}</span>@enderror
+                </label>
             </div>
-            <label>Minimum stock level<input name="minimum_stock" type="number" min="0" id="minimum_stock" value="{{ old('minimum_stock', 0) }}" required></label>
+            <label>Minimum stock level
+                <input name="minimum_stock" type="number" min="0" max="4294967295" step="1" id="minimum_stock" value="{{ old('minimum_stock', 0) }}" class="@error('minimum_stock') input-error @enderror" required>
+                @error('minimum_stock')<span class="field-error">{{ $message }}</span>@enderror
+            </label>
             <div class="modal-actions">
                 <button type="button" class="cancel-button" onclick="document.getElementById('inventory-modal').close()">Cancel</button>
                 <button class="primary-action" type="submit" id="submit-btn">Save item</button>
@@ -98,74 +154,17 @@
 
 @push('scripts')
 <script>
-    function editInventory(id, itemName, category, quantity, unit, minimumStock) {
-        document.getElementById('modal-title').textContent = 'Edit inventory item';
-        document.getElementById('modal-description').textContent = 'Update inventory item information.';
-        document.getElementById('form-method').value = 'PUT';
-        document.getElementById('inventory-form').action = '/admin/inventory/' + id;
-        document.getElementById('item-id').value = id;
-        document.getElementById('item_name').value = itemName;
-        document.getElementById('category').value = category;
-        document.getElementById('quantity').value = quantity;
-        document.getElementById('unit').value = unit;
-        document.getElementById('minimum_stock').value = minimumStock;
-        document.getElementById('submit-btn').textContent = 'Update item';
-        document.getElementById('inventory-modal').showModal();
-    }
-
-    document.querySelector('.add-button').addEventListener('click', function() {
-        document.getElementById('modal-title').textContent = 'Add inventory item';
-        document.getElementById('modal-description').textContent = 'Add a new inventory item to the system.';
-        document.getElementById('form-method').value = 'POST';
-        document.getElementById('inventory-form').action = '{{ route('admin.inventory.store') }}';
-        document.getElementById('item-id').value = '';
-        document.getElementById('item_name').value = '';
-        document.getElementById('category').value = '';
-        document.getElementById('quantity').value = '';
-        document.getElementById('unit').value = '';
-        document.getElementById('minimum_stock').value = '';
-        document.getElementById('submit-btn').textContent = 'Add item';
-    });
-
-    function deleteInventory(id) {
-        Swal.fire({
-            title: 'Delete Inventory Item',
-            text: 'Are you sure you want to delete this inventory item? This action cannot be undone.',
-            icon: 'warning',
-            iconColor: '#f59e0b',
-            showCancelButton: true,
-            confirmButtonText: 'Delete',
-            cancelButtonText: 'Cancel',
-            confirmButtonColor: '#a96d18',
-            cancelButtonColor: '#64748b',
-            background: '#ffffff',
-            color: '#1e293b',
-            customClass: {
-                popup: 'modern-swal-popup',
-                title: 'modern-swal-title',
-                content: 'modern-swal-content',
-                confirmButton: 'modern-swal-confirm',
-                cancelButton: 'modern-swal-cancel'
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = '/admin/inventory/' + id;
-                const csrfInput = document.createElement('input');
-                csrfInput.type = 'hidden';
-                csrfInput.name = '_token';
-                csrfInput.value = '{{ csrf_token() }}';
-                form.appendChild(csrfInput);
-                const methodInput = document.createElement('input');
-                methodInput.type = 'hidden';
-                methodInput.name = '_method';
-                methodInput.value = 'DELETE';
-                form.appendChild(methodInput);
-                document.body.appendChild(form);
-                form.submit();
-            }
-        });
-    }
+    window.inventoryConfig = {
+        csrf: @json(csrf_token()),
+        formHasErrors: @json($errors->has('item_name') || $errors->has('category') || $errors->has('quantity') || $errors->has('unit') || $errors->has('minimum_stock')),
+        failedItemId: @json(old('id')),
+        failedMethod: @json(strtoupper((string) old('_method', 'POST'))),
+        routes: {
+            store: @json(route('admin.inventory.store')),
+            update: @json(route('admin.inventory.update', ['id' => '__ID__'])),
+            delete: @json(route('admin.inventory.delete', ['id' => '__ID__'])),
+        },
+    };
 </script>
+<script src="{{ asset('js/admin-inventory.js') }}"></script>
 @endpush
