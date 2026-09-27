@@ -319,6 +319,14 @@
 
         document.getElementById('open-add-modal')?.addEventListener('click', openAddModal);
 
+        const initialParams = new URLSearchParams(window.location.search);
+        if (initialParams.get('action') === 'add') {
+            openAddModal();
+            initialParams.delete('action');
+            const query = initialParams.toString();
+            window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+        }
+
         document.getElementById('view-edit-btn')?.addEventListener('click', (e) => {
             document.getElementById('view-modal').close();
             openEditModal(e.currentTarget);

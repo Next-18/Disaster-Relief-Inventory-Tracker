@@ -96,6 +96,14 @@
             modal.showModal();
         });
 
+        const initialParams = new URLSearchParams(window.location.search);
+        if (initialParams.get('action') === 'add') {
+            document.getElementById('open-add-inventory')?.click();
+            initialParams.delete('action');
+            const query = initialParams.toString();
+            window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+        }
+
         document.addEventListener('click', (event) => {
             const editButton = event.target.closest('.edit-inventory-btn');
             if (editButton) {

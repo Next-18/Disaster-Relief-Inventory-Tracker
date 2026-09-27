@@ -21,9 +21,14 @@
 		<div class="panel-heading">
 			<div>
 				<h3>Distribution history</h3>
-				<p>{{ $distributions->total() }} total distribution records</p>
+				<p>{{ $distributions->total() }}{{ $search !== '' ? ' matching' : ' total' }} distribution records</p>
 			</div>
-			<input class="table-search" placeholder="Search records" aria-label="Search records">
+			<form class="module-search-form" method="GET" action="{{ route('admin.distribution') }}" role="search">
+				<label class="sr-only" for="distribution-search">Search distributions</label>
+				<input class="table-search" id="distribution-search" type="search" name="search" value="{{ $search }}" placeholder="Search beneficiary, package..." aria-label="Search distributions">
+				<button class="action-btn" type="submit">Search</button>
+				@if($search !== '')<a class="filter-clear" href="{{ route('admin.distribution') }}">Clear</a>@endif
+			</form>
 		</div>
 		<div class="table-wrap">
 			<table class="record-table">
@@ -53,7 +58,7 @@
 						</tr>
 					@empty
 						<tr>
-							<td colspan="5" class="empty-cell">No distribution records yet.</td>
+							<td colspan="5" class="empty-cell">{{ $search !== '' ? 'No distributions match this search.' : 'No distribution records yet.' }}</td>
 						</tr>
 					@endforelse
 				</tbody>
@@ -119,7 +124,7 @@
 		document.getElementById('distribution-modal').showModal();
 	}
 
-	document.querySelector('.add-button').addEventListener('click', function() {
+	document.querySelector('.add-button')?.addEventListener('click', function() {
 		document.getElementById('modal-title').textContent = 'Record Distribution';
 		document.getElementById('modal-description').textContent = 'Record a relief package distribution to a beneficiary.';
 		document.getElementById('form-method').value = 'POST';
@@ -131,6 +136,16 @@
 		document.getElementById('status').value = 'Released';
 		document.getElementById('notes').value = '';
 		document.getElementById('submit-btn').textContent = 'Record Distribution';
+	});
+
+	document.addEventListener('DOMContentLoaded', () => {
+		if (new URLSearchParams(window.location.search).get('action') === 'add') {
+			document.querySelector('.add-button')?.click();
+			const params = new URLSearchParams(window.location.search);
+			params.delete('action');
+			const query = params.toString();
+			window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+		}
 	});
 
 	function deleteDistribution(id) {

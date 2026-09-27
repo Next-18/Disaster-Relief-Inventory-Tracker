@@ -22,104 +22,152 @@
     @stack('scripts')
 
     <script>
-        function confirmLogout() {
-            Swal.fire({
-                title: 'Sign Out',
-                text: 'Are you sure you want to sign out?',
-                icon: 'question',
-                iconColor: '#64748b',
-                showCancelButton: true,
-                confirmButtonText: 'Sign Out',
-                cancelButtonText: 'Cancel',
-                confirmButtonColor: '#64748b',
-                cancelButtonColor: '#94a3b8',
-                background: '#ffffff',
-                color: '#1e293b',
-                customClass: {
-                    popup: 'modern-swal-popup',
-                    title: 'modern-swal-title',
-                    content: 'modern-swal-content',
-                    confirmButton: 'modern-swal-confirm',
-                    cancelButton: 'modern-swal-cancel'
+        (() => {
+            const notificationButton = document.getElementById('notification-btn');
+            const notificationPanel = document.getElementById('notifications-panel');
+            const notificationList = document.getElementById('notifications-list');
+            const notificationBadge = document.getElementById('notification-count');
+            const markAllReadButton = document.getElementById('mark-all-read');
+            const quickActionsButton = document.getElementById('quick-actions-btn');
+            const quickActionsMenu = document.getElementById('quick-actions-menu');
+            const searchInput = document.getElementById('global-search');
+            const logoutButton = document.getElementById('logout-button');
+            const logoutUrl = @json(route('logout'));
+            const csrfToken = @json(csrf_token());
+
+            const setPanelOpen = (panel, button, open) => {
+                if (!panel || !button) return;
+                panel.classList.toggle('show', open);
+                panel.setAttribute('aria-hidden', String(!open));
+                button.setAttribute('aria-expanded', String(open));
+            };
+
+            const closeMenus = () => {
+                setPanelOpen(notificationPanel, notificationButton, false);
+                setPanelOpen(quickActionsMenu, quickActionsButton, false);
+            };
+
+            notificationButton?.addEventListener('click', () => {
+                const open = !notificationPanel?.classList.contains('show');
+                setPanelOpen(quickActionsMenu, quickActionsButton, false);
+                setPanelOpen(notificationPanel, notificationButton, open);
+            });
+
+            quickActionsButton?.addEventListener('click', () => {
+                const open = !quickActionsMenu?.classList.contains('show');
+                setPanelOpen(notificationPanel, notificationButton, false);
+                setPanelOpen(quickActionsMenu, quickActionsButton, open);
+            });
+
+            const notificationItems = notificationList
+                ? Array.from(notificationList.querySelectorAll('[data-notification-id]'))
+                : [];
+            const currentNotificationIds = new Set(notificationItems.map((item) => item.dataset.notificationId));
+            const storageKey = `relief-tracker:notifications-read:${notificationList?.dataset.userId || 'guest'}`;
+            let readNotificationIds = new Set();
+
+            try {
+                const storedIds = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                if (Array.isArray(storedIds)) readNotificationIds = new Set(storedIds.filter((id) => typeof id === 'string'));
+            } catch (error) {
+                readNotificationIds = new Set();
+            }
+
+            const saveReadIds = () => {
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(Array.from(readNotificationIds).slice(-200)));
+                } catch (error) {
+                    // Notifications still work for this page when browser storage is disabled.
                 }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = '{{ route('logout') }}';
-                    const csrfInput = document.createElement('input');
-                    csrfInput.type = 'hidden';
-                    csrfInput.name = '_token';
-                    csrfInput.value = '{{ csrf_token() }}';
-                    form.appendChild(csrfInput);
-                    document.body.appendChild(form);
-                    form.submit();
+            };
+
+            const refreshNotificationState = () => {
+                let unreadCount = 0;
+                notificationItems.forEach((item) => {
+                    const unread = !readNotificationIds.has(item.dataset.notificationId);
+                    item.classList.toggle('unread', unread);
+                    if (unread) unreadCount += 1;
+                });
+
+                if (notificationBadge) {
+                    notificationBadge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+                    notificationBadge.hidden = unreadCount === 0;
+                }
+                if (markAllReadButton) markAllReadButton.disabled = unreadCount === 0;
+            };
+
+            notificationItems.forEach((item) => {
+                item.addEventListener('click', () => {
+                    readNotificationIds.add(item.dataset.notificationId);
+                    saveReadIds();
+                    refreshNotificationState();
+                });
+            });
+
+            markAllReadButton?.addEventListener('click', () => {
+                currentNotificationIds.forEach((id) => readNotificationIds.add(id));
+                saveReadIds();
+                refreshNotificationState();
+            });
+            refreshNotificationState();
+
+            document.addEventListener('click', (event) => {
+                if (notificationPanel && notificationButton && !notificationPanel.contains(event.target) && !notificationButton.contains(event.target)) {
+                    setPanelOpen(notificationPanel, notificationButton, false);
+                }
+                if (quickActionsMenu && quickActionsButton && !quickActionsMenu.contains(event.target) && !quickActionsButton.contains(event.target)) {
+                    setPanelOpen(quickActionsMenu, quickActionsButton, false);
                 }
             });
-        }
 
-        function toggleNotifications() {
-            const panel = document.getElementById('notifications-panel');
-            const menu = document.getElementById('quick-actions-menu');
-            
-            if (panel) {
-                panel.classList.toggle('show');
-                if (menu) menu.classList.remove('show');
-            }
-        }
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    const hadOpenMenu = notificationPanel?.classList.contains('show') || quickActionsMenu?.classList.contains('show');
+                    closeMenus();
+                    if (hadOpenMenu) (notificationButton || quickActionsButton)?.focus();
+                }
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                    event.preventDefault();
+                    searchInput?.focus();
+                    searchInput?.select();
+                }
+            });
 
-        function toggleQuickActions() {
-            const menu = document.getElementById('quick-actions-menu');
-            const panel = document.getElementById('notifications-panel');
-            
-            if (menu) {
-                menu.classList.toggle('show');
-                if (panel) panel.classList.remove('show');
-            }
-        }
+            logoutButton?.addEventListener('click', () => {
+                const submitLogout = () => {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = logoutUrl;
+                    const token = document.createElement('input');
+                    token.type = 'hidden';
+                    token.name = '_token';
+                    token.value = csrfToken;
+                    form.appendChild(token);
+                    document.body.appendChild(form);
+                    form.submit();
+                };
 
-        function markAllAsRead() {
-            const unreadItems = document.querySelectorAll('.notification-item.unread');
-            unreadItems.forEach(item => item.classList.remove('unread'));
-            
-            const countBadge = document.getElementById('notification-count');
-            if (countBadge) {
-                countBadge.textContent = '0';
-                countBadge.style.display = 'none';
-            }
-        }
+                if (typeof Swal === 'undefined') {
+                    if (window.confirm('Are you sure you want to sign out?')) submitLogout();
+                    return;
+                }
 
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', function(event) {
-            const notificationBtn = document.querySelector('.notification-btn');
-            const quickActionsBtn = document.querySelector('.quick-actions-btn');
-            const notificationsPanel = document.getElementById('notifications-panel');
-            const quickActionsMenu = document.getElementById('quick-actions-menu');
-            
-            if (notificationsPanel && !notificationsPanel.contains(event.target) && !notificationBtn.contains(event.target)) {
-                notificationsPanel.classList.remove('show');
-            }
-            
-            if (quickActionsMenu && !quickActionsMenu.contains(event.target) && !quickActionsBtn.contains(event.target)) {
-                quickActionsMenu.classList.remove('show');
-            }
-        });
-
-        // Global search functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const searchInput = document.getElementById('global-search');
-            if (searchInput) {
-                searchInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        const searchTerm = this.value.trim();
-                        if (searchTerm) {
-                            // Redirect to beneficiaries page with search
-                            window.location.href = '/admin/beneficiaries?search=' + encodeURIComponent(searchTerm);
-                        }
-                    }
+                Swal.fire({
+                    title: 'Sign out?',
+                    text: 'You will need to sign in again to access the admin portal.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sign out',
+                    cancelButtonText: 'Stay signed in',
+                    confirmButtonColor: '#2563eb',
+                    cancelButtonColor: '#64748b',
+                    background: '#ffffff',
+                    color: '#1e293b',
+                }).then((result) => {
+                    if (result.isConfirmed) submitLogout();
                 });
-            }
-        });
+            });
+        })();
     </script>
 </body>
 </html>

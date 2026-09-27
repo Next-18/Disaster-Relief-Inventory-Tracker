@@ -334,9 +334,80 @@ class AdminController extends Controller
         return redirect()->route('admin.inventory')->with('success', 'Inventory item deleted successfully.');
     }
 
-    public function packages()
+    public function search(Request $request)
     {
-        return view('admin.packages', ['packages' => ReliefPackage::latest()->paginate(10)]);
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:1', 'max:100'],
+        ]);
+        $term = trim($validated['q']);
+        $like = '%' . $term . '%';
+
+        $beneficiaries = Beneficiary::query()
+            ->where(function ($query) use ($like) {
+                $query->where('full_name', 'like', $like)
+                    ->orWhere('beneficiary_no', 'like', $like)
+                    ->orWhere('contact_number', 'like', $like)
+                    ->orWhere('address', 'like', $like);
+            })
+            ->orderBy('full_name')
+            ->limit(8)
+            ->get(['id', 'beneficiary_no', 'full_name', 'address', 'status']);
+
+        $inventoryItems = InventoryItem::query()
+            ->where(function ($query) use ($like) {
+                $query->where('item_name', 'like', $like)
+                    ->orWhere('category', 'like', $like)
+                    ->orWhere('unit', 'like', $like);
+            })
+            ->orderBy('item_name')
+            ->limit(8)
+            ->get(['id', 'item_name', 'category', 'quantity', 'unit']);
+
+        $packages = ReliefPackage::query()
+            ->where(function ($query) use ($like) {
+                $query->where('package_name', 'like', $like)
+                    ->orWhere('category', 'like', $like)
+                    ->orWhere('description', 'like', $like);
+            })
+            ->orderBy('package_name')
+            ->limit(8)
+            ->get(['id', 'package_name', 'category', 'status']);
+
+        $distributions = Distribution::with(['beneficiary:id,beneficiary_no,full_name', 'reliefPackage:id,package_name'])
+            ->where(function ($query) use ($like) {
+                $query->where('status', 'like', $like)
+                    ->orWhere('notes', 'like', $like)
+                    ->orWhere('package_name', 'like', $like)
+                    ->orWhereHas('beneficiary', function ($beneficiaryQuery) use ($like) {
+                        $beneficiaryQuery->where('full_name', 'like', $like)
+                            ->orWhere('beneficiary_no', 'like', $like);
+                    })
+                    ->orWhereHas('reliefPackage', function ($packageQuery) use ($like) {
+                        $packageQuery->where('package_name', 'like', $like);
+                    });
+            })
+            ->latest('date_released')
+            ->limit(8)
+            ->get(['id', 'beneficiary_id', 'package_id', 'date_released', 'status']);
+
+        return view('admin.search', compact('term', 'beneficiaries', 'inventoryItems', 'packages', 'distributions'));
+    }
+
+    public function packages(Request $request)
+    {
+        $query = ReliefPackage::query();
+        $search = trim((string) $request->input('search', ''));
+
+        if ($search !== '') {
+            $query->where(function ($packages) use ($search) {
+                $packages->where('package_name', 'like', "%{$search}%")
+                    ->orWhere('category', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $packages = $query->latest()->paginate(10)->withQueryString();
+        return view('admin.packages', compact('packages'));
     }
 
     public function storePackage(Request $request)
@@ -375,12 +446,31 @@ class AdminController extends Controller
         return redirect()->route('admin.packages')->with('success', 'Relief package deleted successfully.');
     }
 
-    public function distribution()
+    public function distribution(Request $request)
     {
-        $distributions = Distribution::with(['beneficiary', 'reliefPackage'])->latest()->paginate(10);
+        $query = Distribution::with(['beneficiary', 'reliefPackage']);
+        $search = trim((string) $request->input('search', ''));
+
+        if ($search !== '') {
+            $query->where(function ($distributions) use ($search) {
+                $like = "%{$search}%";
+                $distributions->where('status', 'like', $like)
+                    ->orWhere('notes', 'like', $like)
+                    ->orWhere('package_name', 'like', $like)
+                    ->orWhereHas('beneficiary', function ($beneficiaries) use ($like) {
+                        $beneficiaries->where('full_name', 'like', $like)
+                            ->orWhere('beneficiary_no', 'like', $like);
+                    })
+                    ->orWhereHas('reliefPackage', function ($packages) use ($like) {
+                        $packages->where('package_name', 'like', $like);
+                    });
+            });
+        }
+
+        $distributions = $query->latest('date_released')->paginate(10)->withQueryString();
         $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
         $packages = ReliefPackage::where('status', 'Available')->orderBy('package_name')->get();
-        return view('admin.distribution', compact('distributions', 'beneficiaries', 'packages'));
+        return view('admin.distribution', compact('distributions', 'beneficiaries', 'packages', 'search'));
     }
 
     public function storeDistribution(Request $request)

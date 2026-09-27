@@ -20,10 +20,15 @@
 	<section class="panel record-panel">
 		<div class="panel-heading">
 			<div>
-				<h3>Available packages</h3>
-				<p>{{ $packages->total() }} total relief packages</p>
+				<h3>Relief packages</h3>
+				<p>{{ $packages->total() }}{{ request()->filled('search') ? ' matching' : ' total' }} packages</p>
 			</div>
-			<input class="table-search" placeholder="Search packages" aria-label="Search packages">
+			<form class="module-search-form" method="GET" action="{{ route('admin.packages') }}" role="search">
+				<label class="sr-only" for="package-search">Search packages</label>
+				<input class="table-search" id="package-search" type="search" name="search" value="{{ request('search') }}" placeholder="Search packages" aria-label="Search packages">
+				<button class="action-btn" type="submit">Search</button>
+				@if(request()->filled('search'))<a class="filter-clear" href="{{ route('admin.packages') }}">Clear</a>@endif
+			</form>
 		</div>
 		<div class="table-wrap">
 			<table class="record-table">
@@ -52,7 +57,7 @@
 						</tr>
 					@empty
 						<tr>
-							<td colspan="5" class="empty-cell">No relief packages yet.</td>
+						<td colspan="5" class="empty-cell">{{ request()->filled('search') ? 'No packages match this search.' : 'No relief packages yet.' }}</td>
 						</tr>
 					@endforelse
 				</tbody>
@@ -115,6 +120,14 @@
 		document.getElementById('status').value = 'Available';
 		document.getElementById('submit-btn').textContent = 'Save package';
 	});
+
+	if (new URLSearchParams(window.location.search).get('action') === 'add') {
+		document.querySelector('.add-button')?.click();
+		const params = new URLSearchParams(window.location.search);
+		params.delete('action');
+		const query = params.toString();
+		window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+	}
 
 	function deletePackage(id) {
 		Swal.fire({
