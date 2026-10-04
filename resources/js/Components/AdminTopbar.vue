@@ -74,7 +74,8 @@ async function signOut() {
             icon: 'question',
             showCancelButton: true,
             confirmButtonText: 'Sign out',
-            cancelButtonText: 'Stay signed in',
+            cancelButtonText: 'Cancel',
+            reverseButtons: true,
             confirmButtonColor: '#2563eb',
         })
         : { isConfirmed: window.confirm('Are you sure you want to sign out?') };
