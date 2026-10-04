@@ -8,6 +8,7 @@ use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AdminReportsTest extends TestCase
@@ -42,22 +43,20 @@ class AdminReportsTest extends TestCase
             'end_date' => '2026-09-30',
             'status' => 'Pending',
         ]))
+            
             ->assertOk()
-            ->assertSee('aria-label="Report filters"', false)
-            ->assertSee('All distributions')
-            ->assertSee('Apply filters')
-            ->assertSee('<b>2</b>', false)
-            ->assertSee('Released')
-            ->assertSee('Pending')
-            ->assertSee('50.0%')
-            ->assertSee('Bea Pending')
-            ->assertSee('Showing 1–1 of 1 matching records')
-            ->assertSee('Monthly distribution trend')
-            ->assertSee('Sep 26: 2 total, 1 released, 1 pending, 0 other')
-            ->assertSee('Current inventory snapshot')
-            ->assertSee('Total units on hand')
-            ->assertSee('1 low stock record and 1 record above minimum')
-            ->assertSee('27');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Reports')
+                ->where('totalDistributions', 2)
+                ->where('releasedCount', 1)
+                ->where('pendingCount', 1)
+                ->where('releaseRate', 50)
+                ->where('distributions.data.0.beneficiary.full_name', 'Bea Pending')
+                ->where('monthlyTrend.2026-09.total', 2)
+                ->where('inventoryRecordCount', 2)
+                ->where('totalUnits', 27)
+                ->where('lowStockItems', 1)
+                ->where('healthyStockItems', 1));
     }
 
     public function test_report_rejects_a_date_range_where_end_precedes_start(): void
@@ -78,11 +77,15 @@ class AdminReportsTest extends TestCase
             'start_date' => '2026-07-01',
             'end_date' => '2026-07-31',
         ]))
+            
             ->assertOk()
-            ->assertSee('0.0%')
-            ->assertSee('No distribution activity in the months shown.')
-            ->assertSee('No distributions found.')
-            ->assertSee('No inventory records yet');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Reports')
+                ->where('releaseRate', 0)
+                ->where('chartHasActivity', false)
+                ->has('distributions.data', 0)
+                ->has('inventoryItems.data', 0)
+                ->where('inventoryRecordCount', 0));
     }
 
     public function test_report_exports_respect_filters_and_escape_spreadsheet_formulas(): void

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use SimpleSoftwareIO\QrCode\Facades\QrCode as QRCodeGenerator;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class AdminController extends Controller
 {
@@ -83,13 +84,14 @@ class AdminController extends Controller
         $inactiveBeneficiaries = Beneficiary::where('status', 'Inactive')->count();
         $priorityHouseholds = Beneficiary::where('priority_type', '!=', 'Regular')->count();
 
-        return view('admin.beneficiaries', compact(
-            'beneficiaries',
-            'totalBeneficiaries',
-            'activeBeneficiaries',
-            'inactiveBeneficiaries',
-            'priorityHouseholds'
-        ));
+        return Inertia::render('Admin/Beneficiaries', [
+            'beneficiaries' => $beneficiaries,
+            'totalBeneficiaries' => $totalBeneficiaries,
+            'activeBeneficiaries' => $activeBeneficiaries,
+            'inactiveBeneficiaries' => $inactiveBeneficiaries,
+            'priorityHouseholds' => $priorityHouseholds,
+            'filters' => $request->only(['search', 'status', 'priority_type', 'priority_only', 'per_page', 'sort', 'direction']),
+        ]);
     }
 
     protected function beneficiaryValidationRules($id = null): array
@@ -281,12 +283,13 @@ class AdminController extends Controller
         $lowStockCount = InventoryItem::lowStock()->count();
         $categoryCount = InventoryItem::query()->distinct()->count('category');
 
-        return view('admin.inventory', compact(
-            'items',
-            'totalInventoryItems',
-            'lowStockCount',
-            'categoryCount'
-        ));
+        return Inertia::render('Admin/Inventory', [
+            'items' => $items,
+            'totalInventoryItems' => $totalInventoryItems,
+            'lowStockCount' => $lowStockCount,
+            'categoryCount' => $categoryCount,
+            'filters' => $request->only(['search', 'stock_status', 'per_page']),
+        ]);
     }
 
     protected function inventoryValidationRules(): array
@@ -391,7 +394,7 @@ class AdminController extends Controller
             ->limit(8)
             ->get(['id', 'beneficiary_id', 'package_id', 'date_released', 'status']);
 
-        return view('admin.search', compact('term', 'beneficiaries', 'inventoryItems', 'packages', 'distributions'));
+        return Inertia::render('Admin/Search', compact('term', 'beneficiaries', 'inventoryItems', 'packages', 'distributions'));
     }
 
     public function packages(Request $request)
@@ -408,7 +411,10 @@ class AdminController extends Controller
         }
 
         $packages = $query->latest()->paginate(10)->withQueryString();
-        return view('admin.packages', compact('packages'));
+        return Inertia::render('Admin/Packages', [
+            'packages' => $packages,
+            'filters' => $request->only(['search']),
+        ]);
     }
 
     public function storePackage(Request $request)
@@ -470,7 +476,13 @@ class AdminController extends Controller
         $distributions = $query->latest('date_released')->paginate(10)->withQueryString();
         $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
         $packages = ReliefPackage::where('status', 'Available')->orderBy('package_name')->get();
-        return view('admin.distribution', compact('distributions', 'beneficiaries', 'packages', 'search'));
+        return Inertia::render('Admin/Distribution', [
+            'distributions' => $distributions,
+            'beneficiaries' => $beneficiaries,
+            'packages' => $packages,
+            'search' => $search,
+            'today' => now()->format('Y-m-d'),
+        ]);
     }
 
     public function storeDistribution(Request $request)
@@ -489,7 +501,11 @@ class AdminController extends Controller
         $package = ReliefPackage::find($data['package_id']);
         $this->logAudit('create', 'distribution', "Recorded distribution: {$package->package_name} to {$beneficiary->full_name}");
 
-        if ($request->ajax()) {
+        if ($request->header('X-Inertia')) {
+            return redirect()->back()->with('success', 'Distribution recorded successfully.');
+        }
+
+        if ($request->ajax() && !$request->header('X-Inertia')) {
             return response()->json(['success' => true, 'message' => 'Distribution recorded successfully.']);
         }
 
@@ -533,14 +549,17 @@ class AdminController extends Controller
         
         $beneficiaries = $query->get();
         
-        if ($request->ajax()) {
+        if ($request->ajax() && !$request->header('X-Inertia')) {
             return response()->json([
                 'beneficiaries' => $beneficiaries,
                 'count' => $beneficiaries->count()
             ]);
         }
         
-        return view('admin.qr-codes', compact('beneficiaries'));
+        return Inertia::render('Admin/QrCodes', [
+            'beneficiaries' => $beneficiaries,
+            'filters' => $request->only(['search']),
+        ]);
     }
 
     public function generateQRCode($id)
@@ -576,7 +595,7 @@ class AdminController extends Controller
     public function lostQr()
     {
         $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
-        return view('admin.lost-qr', compact('beneficiaries'));
+        return Inertia::render('Admin/LostQr', compact('beneficiaries'));
     }
 
     public function reportLostQr(Request $request, $id)
@@ -716,7 +735,7 @@ class AdminController extends Controller
             default => 'All dates',
         };
 
-        return view('admin.reports', compact(
+        return Inertia::render('Admin/Reports', compact(
             'distributions',
             'startDate',
             'endDate',
@@ -845,13 +864,18 @@ class AdminController extends Controller
             $query->where('created_at', '<=', $request->end_date . ' 23:59:59');
         }
         
-        $auditLogs = $query->paginate(20);
+        $auditLogs = $query->paginate(20)->withQueryString();
         
         // Get unique modules and actions for filters
         $modules = AuditLog::distinct()->pluck('module')->sort();
         $actions = AuditLog::distinct()->pluck('action')->sort();
         
-        return view('admin.audit-logs', compact('auditLogs', 'modules', 'actions'));
+        return Inertia::render('Admin/AuditLogs', [
+            'auditLogs' => $auditLogs,
+            'modules' => $modules,
+            'actions' => $actions,
+            'filters' => $request->only(['module', 'action', 'start_date', 'end_date']),
+        ]);
     }
 
     public function settings(Request $request)
@@ -907,7 +931,7 @@ class AdminController extends Controller
             'session_timeout' => Setting::get('session_timeout', 30),
         ];
 
-        return view('admin.settings', compact('settings'));
+        return Inertia::render('Admin/Settings', compact('settings'));
     }
 
     private function initializeDefaultSettings()

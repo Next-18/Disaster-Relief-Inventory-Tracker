@@ -2,19 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Beneficiary;
 use App\Models\Distribution;
+use App\Models\Beneficiary;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class AuthController extends Controller
 {
     public function showLogin()
     {
-        return Auth::check() ? redirect()->route('dashboard') : view('auth.login');
+        return Auth::check() ? redirect()->route('dashboard') : Inertia::render('Auth/Login');
     }
 
     public function login(Request $request)
@@ -53,19 +54,39 @@ class AuthController extends Controller
         $municipality = Setting::get('municipality', 'Municipality');
         $location = "{$barangayName}, {$municipality}";
         
-        return view('dashboard', compact(
-            'recentDistributions',
-            'totalBeneficiaries',
-            'activeBeneficiaries',
-            'newThisMonth',
-            'availablePackages',
-            'totalPackages',
-            'distributedThisMonth',
-            'totalDistributions',
-            'lowStockItems',
-            'stockAlertsCount',
-            'location'
-        )); 
+        $recentDistributions = $recentDistributions->map(fn (Distribution $distribution) => [
+            'id' => $distribution->id,
+            'beneficiary_name' => $distribution->beneficiary?->full_name ?? 'Unknown Beneficiary',
+            'beneficiary_no' => $distribution->beneficiary?->beneficiary_no ?? 'N/A',
+            'package_name' => $distribution->reliefPackage?->package_name ?? 'Unknown Package',
+            'date_released' => $distribution->date_released->format('M d, Y'),
+            'status' => $distribution->status,
+        ])->all();
+
+        $lowStockItems = $lowStockItems->map(fn (InventoryItem $item) => [
+            'id' => $item->id,
+            'item_name' => $item->item_name,
+            'quantity' => $item->quantity,
+            'unit' => $item->unit,
+            'status' => $item->status,
+        ])->all();
+
+        return Inertia::render('Admin/Dashboard', [
+            'recentDistributions' => $recentDistributions,
+            'totalBeneficiaries' => $totalBeneficiaries,
+            'activeBeneficiaries' => $activeBeneficiaries,
+            'newThisMonth' => $newThisMonth,
+            'availablePackages' => $availablePackages,
+            'totalPackages' => $totalPackages,
+            'distributedThisMonth' => $distributedThisMonth,
+            'totalDistributions' => $totalDistributions,
+            'lowStockItems' => $lowStockItems,
+            'stockAlertsCount' => $stockAlertsCount,
+            'location' => $location,
+            'today' => now()->format('Y-m-d'),
+            'beneficiaries' => Beneficiary::where('status', 'Active')->orderBy('full_name')->get(['id', 'full_name', 'beneficiary_no']),
+            'packages' => ReliefPackage::where('status', 'Available')->orderBy('package_name')->get(['id', 'package_name']),
+        ]);
     }
 
     public function module(string $module)
@@ -84,7 +105,7 @@ class AuthController extends Controller
 
         abort_unless(isset($modules[$module]), 404);
         [$title, $icon, $description] = $modules[$module];
-        return view('admin.module', compact('title', 'icon', 'description'));
+        return Inertia::render('Admin/Module', compact('title', 'icon', 'description'));
     }
 
     public function logout(Request $request)

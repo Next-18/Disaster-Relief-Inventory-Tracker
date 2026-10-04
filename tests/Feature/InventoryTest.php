@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\InventoryItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class InventoryTest extends TestCase
@@ -37,15 +38,13 @@ class InventoryTest extends TestCase
             'stock_status' => 'low',
         ]));
 
-        $response->assertOk()
-            ->assertSee('Rice kits')
-            ->assertDontSee('Water cases')
-            ->assertSee('Stock records')
-            ->assertSee('Low stock records')
-            ->assertSee('Categories')
-            ->assertSee('<div><small>Stock records</small><b>2</b></div>', false)
-            ->assertSee('<div><small>Low stock records</small><b>1</b></div>', false)
-            ->assertSee('<div><small>Categories</small><b>2</b></div>', false);
+        $response->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/Inventory')
+            ->where('items.total', 1)
+            ->where('items.data.0.item_name', 'Rice kits')
+            ->where('totalInventoryItems', 2)
+            ->where('lowStockCount', 1)
+            ->where('categoryCount', 2));
 
         $this->assertSame('Low Stock', InventoryItem::where('item_name', 'Rice kits')->firstOrFail()->status);
         $this->assertSame('In Stock', InventoryItem::where('item_name', 'Water cases')->firstOrFail()->status);
@@ -78,7 +77,7 @@ class InventoryTest extends TestCase
         $this->assertSame('In Stock', $item->fresh()->status);
     }
 
-    public function test_invalid_edit_reopens_the_same_item_for_correction(): void
+    public function test_invalid_edit_returns_field_validation_errors_for_the_inertia_form(): void
     {
         $this->actingAs(User::factory()->create());
         $item = InventoryItem::create([
@@ -91,7 +90,7 @@ class InventoryTest extends TestCase
         ]);
 
         $response = $this->from(route('admin.inventory'))
-            ->followingRedirects()
+            ->withHeader('X-Inertia', 'true')
             ->put(route('admin.inventory.update', $item->id), [
                 '_method' => 'PUT',
                 'id' => $item->id,
@@ -102,10 +101,8 @@ class InventoryTest extends TestCase
                 'minimum_stock' => 2,
             ]);
 
-        $response->assertOk()
-            ->assertSee('formHasErrors: true')
-            ->assertSee('failedItemId: ' . $item->id)
-            ->assertSee('failedMethod: "PUT"', false);
+        $response->assertRedirect(route('admin.inventory'))
+            ->assertSessionHasErrors(['quantity']);
     }
 
     public function test_inventory_pagination_is_available_and_out_of_range_pages_are_corrected(): void
@@ -125,8 +122,10 @@ class InventoryTest extends TestCase
 
         $this->get(route('admin.inventory'))
             ->assertOk()
-            ->assertSee('pagination-wrap')
-            ->assertSee('page=2');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Inventory')
+                ->where('items.last_page', 2)
+                ->where('items.links.2.url', route('admin.inventory', ['page' => 2])));
 
         $this->get(route('admin.inventory', ['page' => 9]))
             ->assertRedirect(route('admin.inventory', ['page' => 2]));

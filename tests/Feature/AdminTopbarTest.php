@@ -8,6 +8,7 @@ use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AdminTopbarTest extends TestCase
@@ -49,19 +50,28 @@ class AdminTopbarTest extends TestCase
 
         $this->get(route('admin.search', ['q' => 'Rice']))
             ->assertOk()
-            ->assertSee('Mia Santos')
-            ->assertSee($item->item_name)
-            ->assertSee($package->package_name)
-            ->assertSee('Mia Santos · Rice relief pack');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Search')
+                ->where('term', 'Rice')
+                ->where('beneficiaries.0.full_name', 'Mia Santos')
+                ->where('inventoryItems.0.item_name', $item->item_name)
+                ->where('packages.0.package_name', $package->package_name)
+                ->where('distributions.0.beneficiary.full_name', 'Mia Santos')
+                ->where('distributions.0.relief_package.package_name', 'Rice relief pack'));
 
         $this->get(route('admin.packages', ['search' => 'Rice']))
             ->assertOk()
-            ->assertSee($package->package_name);
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Packages')
+                ->where('packages.data.0.package_name', $package->package_name)
+                ->where('filters.search', 'Rice'));
 
         $this->get(route('admin.distribution', ['search' => 'Rice']))
             ->assertOk()
-            ->assertSee($beneficiary->full_name)
-            ->assertSee($package->package_name);
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Distribution')
+                ->where('distributions.data.0.beneficiary.full_name', $beneficiary->full_name)
+                ->where('distributions.data.0.relief_package.package_name', $package->package_name));
     }
 
     public function test_topbar_notifications_use_current_records_and_quick_actions_target_creation_flows(): void
@@ -98,12 +108,13 @@ class AdminTopbarTest extends TestCase
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('Low stock: Water containers')
-            ->assertSee('Distribution recorded')
-            ->assertSee('New beneficiary')
-            ->assertSee(route('admin.beneficiaries', ['action' => 'add']), false)
-            ->assertSee(route('admin.distribution', ['action' => 'add']), false)
-            ->assertSee(route('admin.inventory', ['action' => 'add']), false)
-            ->assertDontSee('Juan Dela Cruz');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Dashboard')
+                ->where('totalBeneficiaries', 1)
+                ->where('notifications.0.title', 'Low stock: Water containers')
+                ->has('notifications', 3)
+                ->where('routeUrls.beneficiaries', route('admin.beneficiaries'))
+                ->where('routeUrls.distribution', route('admin.distribution'))
+                ->where('routeUrls.inventory', route('admin.inventory')));
     }
 }

@@ -1,0 +1,322 @@
+<script setup>
+import { router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import AdminModal from '../../Components/AdminModal.vue';
+import InertiaPagination from '../../Components/InertiaPagination.vue';
+import AdminLayout from '../../Layouts/AdminLayout.vue';
+
+defineOptions({ layout: AdminLayout });
+
+const props = defineProps({
+    beneficiaries: { type: Object, required: true },
+    totalBeneficiaries: { type: Number, required: true },
+    activeBeneficiaries: { type: Number, required: true },
+    inactiveBeneficiaries: { type: Number, required: true },
+    priorityHouseholds: { type: Number, required: true },
+    filters: { type: Object, default: () => ({}) },
+});
+
+const page = usePage();
+const routes = computed(() => page.props.routeUrls ?? {});
+const filters = reactive({
+    search: props.filters.search ?? '',
+    status: props.filters.status ?? 'all',
+    priority_type: props.filters.priority_type ?? 'all',
+    priority_only: props.filters.priority_only === true || props.filters.priority_only === '1' || props.filters.priority_only === 1,
+    per_page: Number(props.filters.per_page ?? 10),
+    sort: props.filters.sort ?? 'created_at',
+    direction: props.filters.direction ?? 'desc',
+});
+const selectedIds = ref([]);
+const rowMenuId = ref(null);
+const beneficiaryModal = ref(null);
+const viewModal = ref(null);
+const qrModal = ref(null);
+const viewedBeneficiary = ref(null);
+const qrBeneficiary = ref(null);
+const editingId = ref(null);
+const form = useForm({ full_name: '', contact_number: '', address: '', household_size: '', priority_type: 'Regular', status: 'Active' });
+const bulkForm = useForm({ ids: [], status: 'Active' });
+let searchTimer;
+let lastSubmittedSearch = filters.search.trim();
+
+const rows = computed(() => props.beneficiaries.data ?? []);
+const allSelected = computed(() => rows.value.length > 0 && rows.value.every((row) => selectedIds.value.includes(row.id)));
+const activeFilters = computed(() => Boolean(filters.search || filters.status !== 'all' || filters.priority_type !== 'all' || filters.priority_only));
+const exportHref = computed(() => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(buildQuery())) {
+        if (value !== '' && value !== false && value != null) params.set(key, String(value));
+    }
+    return `${routes.value.beneficiariesExport}${params.size ? `?${params}` : ''}`;
+});
+
+function buildQuery() {
+    return {
+        search: filters.search.trim(),
+        status: filters.status,
+        priority_type: filters.priority_type,
+        priority_only: filters.priority_only ? 1 : undefined,
+        per_page: filters.per_page,
+        sort: filters.sort,
+        direction: filters.direction,
+    };
+}
+
+function visitFilters({ replace = false } = {}) {
+    lastSubmittedSearch = filters.search.trim();
+    clearTimeout(searchTimer);
+    router.get(routes.value.beneficiaries, { ...buildQuery(), page: 1 }, {
+        preserveState: true,
+        preserveScroll: true,
+        replace,
+    });
+}
+
+watch(() => filters.search, () => {
+    if (filters.search.trim() === lastSubmittedSearch) return;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => visitFilters({ replace: true }), 350);
+});
+
+watch(() => props.filters, (next) => {
+    lastSubmittedSearch = (next.search ?? '').trim();
+    Object.assign(filters, {
+        search: next.search ?? '',
+        status: next.status ?? 'all',
+        priority_type: next.priority_type ?? 'all',
+        priority_only: next.priority_only === true || next.priority_only === '1' || next.priority_only === 1,
+        per_page: Number(next.per_page ?? 10),
+        sort: next.sort ?? 'created_at',
+        direction: next.direction ?? 'desc',
+    });
+}, { deep: true });
+
+onMounted(() => {
+    if (new URLSearchParams(window.location.search).get('action') === 'add') {
+        openAddModal();
+        const url = new URL(window.location.href);
+        url.searchParams.delete('action');
+        window.history.replaceState(window.history.state, '', url);
+    }
+});
+onBeforeUnmount(() => clearTimeout(searchTimer));
+
+function openAddModal() {
+    form.reset();
+    form.clearErrors();
+    editingId.value = null;
+    beneficiaryModal.value?.showModal();
+}
+
+function openEditModal(beneficiary) {
+    form.clearErrors();
+    form.full_name = beneficiary.full_name ?? '';
+    form.contact_number = beneficiary.contact_number ?? '';
+    form.address = beneficiary.address ?? '';
+    form.household_size = beneficiary.household_size ?? '';
+    form.priority_type = beneficiary.priority_type ?? 'Regular';
+    form.status = beneficiary.status ?? 'Active';
+    editingId.value = beneficiary.id;
+    beneficiaryModal.value?.showModal();
+}
+
+function saveBeneficiary() {
+    const options = {
+        preserveScroll: true,
+        onSuccess: () => {
+            beneficiaryModal.value?.close();
+            form.reset();
+            editingId.value = null;
+        },
+    };
+
+    if (editingId.value) form.put(routes.value.beneficiaryUpdate.replace('__ID__', encodeURIComponent(editingId.value)), options);
+    else form.post(routes.value.beneficiaryStore, options);
+}
+
+function deleteBeneficiary(beneficiary) {
+    if (!window.confirm(`Delete ${beneficiary.full_name}? This cannot be undone.`)) return;
+    router.delete(routes.value.beneficiaryDelete.replace('__ID__', encodeURIComponent(beneficiary.id)), { preserveScroll: true });
+}
+
+function toggleSelected(id) {
+    selectedIds.value = selectedIds.value.includes(id)
+        ? selectedIds.value.filter((selected) => selected !== id)
+        : [...selectedIds.value, id];
+}
+
+function toggleAll(checked) {
+    selectedIds.value = checked ? rows.value.map((row) => row.id) : [];
+}
+
+function clearSelection() {
+    selectedIds.value = [];
+}
+
+function setBulkStatus(status) {
+    if (!selectedIds.value.length) return;
+    bulkForm.ids = [...selectedIds.value];
+    bulkForm.status = status;
+    bulkForm.post(routes.value.beneficiariesBulkStatus, {
+        preserveScroll: true,
+        onSuccess: clearSelection,
+    });
+}
+
+function bulkDelete() {
+    if (!selectedIds.value.length || !window.confirm(`Delete ${selectedIds.value.length} selected beneficiaries? This cannot be undone.`)) return;
+    bulkForm.ids = [...selectedIds.value];
+    bulkForm.post(routes.value.beneficiariesBulkDelete, {
+        preserveScroll: true,
+        onSuccess: clearSelection,
+    });
+}
+
+function showDetails(beneficiary) {
+    viewedBeneficiary.value = beneficiary;
+    rowMenuId.value = null;
+    viewModal.value?.showModal();
+}
+
+function showQr(beneficiary) {
+    qrBeneficiary.value = beneficiary;
+    rowMenuId.value = null;
+    qrModal.value?.showModal();
+}
+
+function generateQr(beneficiary) {
+    rowMenuId.value = null;
+    if (!window.confirm(`Generate a QR code for ${beneficiary.full_name}?`)) return;
+    router.post(routes.value.qrGenerate.replace('__ID__', encodeURIComponent(beneficiary.id)), {}, { preserveScroll: true });
+}
+
+function sortBy(field) {
+    filters.direction = filters.sort === field && filters.direction === 'asc' ? 'desc' : 'asc';
+    filters.sort = field;
+    visitFilters();
+}
+
+function formatDate(value) {
+    return value ? new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+}
+
+function priorityClass(priority) {
+    return { 'Senior Citizen': 'warning', PWD: 'success', 'Solo Parent': 'info' }[priority] ?? 'neutral';
+}
+</script>
+
+<template>
+    <section class="module-heading">
+        <div><h2>Beneficiary records</h2><p>Manage registered households and relief eligibility.</p></div>
+        <button class="add-button" type="button" @click="openAddModal"><span>+</span> Add beneficiary</button>
+    </section>
+
+    <section class="metrics metrics-clickable">
+        <button type="button" class="metric-card" :class="{ 'metric-active': !activeFilters }" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></div><div><small>Total</small><b>{{ totalBeneficiaries }}</b></div>
+        </button>
+        <button type="button" class="metric-card green" :class="{ 'metric-active': filters.status === 'Active' }" @click="filters.status = 'Active'; visitFilters()">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div><small>Active</small><b>{{ activeBeneficiaries }}</b></div>
+        </button>
+        <button type="button" class="metric-card orange" :class="{ 'metric-active': filters.status === 'Inactive' }" @click="filters.status = 'Inactive'; visitFilters()">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg></div><div><small>Inactive</small><b>{{ inactiveBeneficiaries }}</b></div>
+        </button>
+        <button type="button" class="metric-card" :class="{ 'metric-active': filters.priority_only }" @click="filters.priority_only = !filters.priority_only; visitFilters()">
+            <div class="metric-icon"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><small>Priority</small><b>{{ priorityHouseholds }}</b></div>
+        </button>
+    </section>
+
+    <div v-if="activeFilters" class="active-filters">
+        <span class="active-filters-label">Filters:</span>
+        <button v-if="filters.search" type="button" class="filter-chip" @click="filters.search = ''">Search: {{ filters.search }} ×</button>
+        <button v-if="filters.status !== 'all'" type="button" class="filter-chip" @click="filters.status = 'all'; visitFilters()">Status: {{ filters.status }} ×</button>
+        <button v-if="filters.priority_type !== 'all'" type="button" class="filter-chip" @click="filters.priority_type = 'all'; visitFilters()">Priority: {{ filters.priority_type }} ×</button>
+        <button v-if="filters.priority_only" type="button" class="filter-chip" @click="filters.priority_only = false; visitFilters()">Priority households ×</button>
+        <button type="button" class="filter-clear-all" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear all</button>
+    </div>
+
+    <section class="panel record-panel">
+        <div class="panel-heading beneficiaries-panel-heading">
+            <div><h3>Registered beneficiaries</h3><p>{{ beneficiaries.total ? `Showing ${beneficiaries.from}–${beneficiaries.to} of ${beneficiaries.total}` : 'No records to display' }}</p></div>
+            <div class="beneficiaries-toolbar">
+                <form class="beneficiaries-filter-form" @submit.prevent="visitFilters()">
+                    <div class="search-field">
+                        <svg class="search-field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input v-model="filters.search" type="search" inputmode="search" class="table-search beneficiaries-search" placeholder="Search name, ID, contact..." aria-label="Search records" autocomplete="off">
+                    </div>
+                    <button type="submit" class="action-btn search-submit-btn">Search</button>
+                    <select v-model="filters.status" class="filter-select" aria-label="Filter by status" @change="visitFilters()"><option value="all">All status</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select>
+                    <select v-model="filters.priority_type" class="filter-select" aria-label="Filter by priority" @change="visitFilters()"><option value="all">All priorities</option><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select>
+                    <select v-model.number="filters.per_page" class="filter-select per-page-select" aria-label="Rows per page" @change="visitFilters()"><option :value="10">10 / page</option><option :value="25">25 / page</option><option :value="50">50 / page</option></select>
+                </form>
+                <a :href="exportHref" class="action-btn export-btn" title="Export filtered results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</a>
+            </div>
+        </div>
+
+        <div v-if="selectedIds.length" class="selection-bar">
+            <span><strong>{{ selectedIds.length }}</strong> selected on this page</span>
+            <div class="selection-bar-actions"><button type="button" class="action-btn" :disabled="bulkForm.processing" @click="setBulkStatus('Active')">Set active</button><button type="button" class="action-btn" :disabled="bulkForm.processing" @click="setBulkStatus('Inactive')">Set inactive</button><button type="button" class="action-btn delete" :disabled="bulkForm.processing" @click="bulkDelete">{{ bulkForm.processing ? 'Saving…' : 'Delete' }}</button><button type="button" class="filter-clear" @click="clearSelection">Clear</button></div>
+        </div>
+
+        <div class="table-wrap">
+            <table class="record-table beneficiaries-table">
+                <thead><tr>
+                    <th class="checkbox-col"><input type="checkbox" :checked="allSelected" aria-label="Select all on page" @change="toggleAll($event.target.checked)"></th>
+                    <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'full_name' }" @click="sortBy('full_name')">Beneficiary <span class="sort-indicator">{{ filters.sort === 'full_name' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
+                    <th>Contact</th>
+                    <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'household_size' }" @click="sortBy('household_size')">Household <span class="sort-indicator">{{ filters.sort === 'household_size' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
+                    <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'priority_type' }" @click="sortBy('priority_type')">Priority <span class="sort-indicator">{{ filters.sort === 'priority_type' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
+                    <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'status' }" @click="sortBy('status')">Status <span class="sort-indicator">{{ filters.sort === 'status' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
+                    <th class="actions-col">Actions</th>
+                </tr></thead>
+                <tbody>
+                    <tr v-for="beneficiary in rows" :key="beneficiary.id" class="beneficiary-row" :class="{ selected: selectedIds.includes(beneficiary.id) }">
+                        <td class="checkbox-col"><input type="checkbox" :checked="selectedIds.includes(beneficiary.id)" :aria-label="`Select ${beneficiary.full_name}`" @change="toggleSelected(beneficiary.id)"></td>
+                        <td><button type="button" class="beneficiary-name-btn view-beneficiary-btn" @click="showDetails(beneficiary)"><div class="beneficiary-cell"><div class="avatar" :class="`a${(beneficiary.id % 4) + 1}`">{{ beneficiary.full_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() }}</div><div><b>{{ beneficiary.full_name }}</b><small>{{ beneficiary.beneficiary_no }} — {{ beneficiary.address || 'No address listed' }}</small></div></div></button></td>
+                        <td>{{ beneficiary.contact_number || '—' }}</td>
+                        <td>{{ beneficiary.household_size || '—' }} members</td>
+                        <td><span class="tag" :class="priorityClass(beneficiary.priority_type)">{{ beneficiary.priority_type }}</span></td>
+                        <td><span class="tag" :class="beneficiary.status === 'Active' ? 'success' : 'warning'">{{ beneficiary.status }}</span></td>
+                        <td class="actions-cell"><div class="row-actions-dropdown">
+                            <button type="button" class="row-actions-btn" :aria-expanded="rowMenuId === beneficiary.id" :aria-label="`Actions for ${beneficiary.full_name}`" @click="rowMenuId = rowMenuId === beneficiary.id ? null : beneficiary.id"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+                            <div v-if="rowMenuId === beneficiary.id" class="row-actions-menu show">
+                                <button type="button" class="row-action-item" @click="showDetails(beneficiary)">View details</button>
+                                <button type="button" class="row-action-item" @click="rowMenuId = null; openEditModal(beneficiary)">Edit</button>
+                                <button v-if="beneficiary.qr_code" type="button" class="row-action-item" @click="showQr(beneficiary)">View QR code</button>
+                                <button v-else type="button" class="row-action-item" @click="generateQr(beneficiary)">Generate QR</button>
+                                <div class="bulk-action-divider"/><button type="button" class="row-action-item row-action-danger" @click="rowMenuId = null; deleteBeneficiary(beneficiary)">Delete</button>
+                            </div>
+                        </div></td>
+                    </tr>
+                    <tr v-if="!rows.length"><td colspan="7"><div class="empty-state"><div class="empty-state-icon">♟</div><h4>{{ activeFilters ? 'No matches found' : 'No beneficiaries yet' }}</h4><p>{{ activeFilters ? 'Try adjusting your search or filters.' : 'Add your first household record to get started.' }}</p><button v-if="activeFilters" type="button" class="primary-action" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear filters</button><button v-else type="button" class="primary-action" @click="openAddModal">Add beneficiary</button></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <InertiaPagination :links="beneficiaries.links" :show="beneficiaries.last_page > 1" />
+    </section>
+
+    <AdminModal ref="beneficiaryModal" class="form-modal" @click.self="beneficiaryModal?.close()">
+        <div class="modal-title"><div><h3>{{ editingId ? 'Edit beneficiary' : 'Add beneficiary' }}</h3><p>{{ editingId ? 'Update beneficiary information.' : 'Create a barangay beneficiary record.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="beneficiaryModal?.close()">×</button></div>
+        <form @submit.prevent="saveBeneficiary">
+            <label>Full name<input v-model="form.full_name" maxlength="255" placeholder="Enter full name" required :class="{ 'input-error': form.errors.full_name }"><small v-if="form.errors.full_name" class="field-error">{{ form.errors.full_name }}</small></label>
+            <label>Contact number<input v-model="form.contact_number" type="tel" inputmode="tel" placeholder="09xx-xxx-xxxx or +63..." :class="{ 'input-error': form.errors.contact_number }"><small v-if="form.errors.contact_number" class="field-error">{{ form.errors.contact_number }}</small></label>
+            <label>Address<input v-model="form.address" maxlength="255" placeholder="Enter complete address"><small v-if="form.errors.address" class="field-error">{{ form.errors.address }}</small></label>
+            <div class="form-row"><label>Household size<input v-model="form.household_size" type="number" min="1" max="99" placeholder="Members"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
+            <label>Status<select v-model="form.status" required><option>Active</option><option>Inactive</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
+            <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="beneficiaryModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update beneficiary' : 'Save beneficiary' }}</button></div>
+        </form>
+    </AdminModal>
+
+    <AdminModal ref="viewModal" class="form-modal detail-modal" @click.self="viewModal?.close()">
+        <div class="modal-title"><div><h3>{{ viewedBeneficiary?.full_name || 'Beneficiary' }}</h3><p>{{ viewedBeneficiary?.beneficiary_no || 'Details' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="viewModal?.close()">×</button></div>
+        <div v-if="viewedBeneficiary" class="detail-modal-body"><p><b>Contact:</b> {{ viewedBeneficiary.contact_number || '—' }}</p><p><b>Address:</b> {{ viewedBeneficiary.address || 'No address listed' }}</p><p><b>Household size:</b> {{ viewedBeneficiary.household_size || '—' }}</p><p><b>Priority:</b> {{ viewedBeneficiary.priority_type }}</p><p><b>Status:</b> {{ viewedBeneficiary.status }}</p><p><b>Registered:</b> {{ formatDate(viewedBeneficiary.created_at) }}</p></div>
+        <div class="modal-actions"><button type="button" class="cancel-button" @click="viewModal?.close()">Close</button><button type="button" class="primary-action" @click="viewModal?.close(); openEditModal(viewedBeneficiary)">Edit record</button></div>
+    </AdminModal>
+
+    <AdminModal ref="qrModal" class="form-modal qr-modal" @click.self="qrModal?.close()">
+        <div class="modal-title"><div><h3>QR Code</h3><p>Scan to verify beneficiary identity</p></div><button type="button" class="modal-close" aria-label="Close" @click="qrModal?.close()">×</button></div>
+        <div v-if="qrBeneficiary" class="qr-display"><img :src="`${routes.qrBase}/${qrBeneficiary.qr_code}`" :alt="`QR code for ${qrBeneficiary.full_name}`"></div>
+        <div class="modal-actions"><button type="button" class="cancel-button" @click="qrModal?.close()">Close</button></div>
+    </AdminModal>
+</template>
