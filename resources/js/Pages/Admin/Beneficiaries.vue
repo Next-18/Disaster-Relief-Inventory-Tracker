@@ -201,6 +201,10 @@ function formatDate(value) {
     return value ? new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 }
 
+function beneficiaryInitials(name) {
+    return (name || '?').trim().split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase();
+}
+
 function priorityClass(priority) {
     return { 'Senior Citizen': 'warning', PWD: 'success', 'Solo Parent': 'info' }[priority] ?? 'neutral';
 }
@@ -309,9 +313,24 @@ function priorityClass(priority) {
     </AdminModal>
 
     <AdminModal ref="viewModal" class="form-modal detail-modal" @click.self="viewModal?.close()">
-        <div class="modal-title"><div><h3>{{ viewedBeneficiary?.full_name || 'Beneficiary' }}</h3><p>{{ viewedBeneficiary?.beneficiary_no || 'Details' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="viewModal?.close()">×</button></div>
-        <div v-if="viewedBeneficiary" class="detail-modal-body"><p><b>Contact:</b> {{ viewedBeneficiary.contact_number || '—' }}</p><p><b>Address:</b> {{ viewedBeneficiary.address || 'No address listed' }}</p><p><b>Household size:</b> {{ viewedBeneficiary.household_size || '—' }}</p><p><b>Priority:</b> {{ viewedBeneficiary.priority_type }}</p><p><b>Status:</b> {{ viewedBeneficiary.status }}</p><p><b>Registered:</b> {{ formatDate(viewedBeneficiary.created_at) }}</p></div>
-        <div class="modal-actions"><button type="button" class="cancel-button" @click="viewModal?.close()">Close</button><button type="button" class="primary-action" @click="viewModal?.close(); openEditModal(viewedBeneficiary)">Edit record</button></div>
+        <div class="modal-title detail-modal-title">
+            <div class="detail-identity">
+                <div class="detail-avatar" :class="`a${((viewedBeneficiary?.id || 0) % 4) + 1}`">{{ beneficiaryInitials(viewedBeneficiary?.full_name) }}</div>
+                <div class="detail-heading-copy">
+                    <h3>{{ viewedBeneficiary?.full_name || 'Beneficiary' }}</h3>
+                    <div class="detail-meta"><span>{{ viewedBeneficiary?.beneficiary_no || 'Record details' }}</span><span v-if="viewedBeneficiary" class="tag" :class="viewedBeneficiary.status === 'Active' ? 'success' : 'warning'">{{ viewedBeneficiary.status }}</span></div>
+                </div>
+            </div>
+            <button type="button" class="modal-close" aria-label="Close details" @click="viewModal?.close()">×</button>
+        </div>
+        <div v-if="viewedBeneficiary" class="detail-modal-body">
+            <div class="detail-row"><span>Contact number</span><strong>{{ viewedBeneficiary.contact_number || 'Not provided' }}</strong></div>
+            <div class="detail-row detail-row-wide"><span>Address</span><strong>{{ viewedBeneficiary.address || 'No address listed' }}</strong></div>
+            <div class="detail-row"><span>Household size</span><strong>{{ viewedBeneficiary.household_size ? `${viewedBeneficiary.household_size} members` : 'Not provided' }}</strong></div>
+            <div class="detail-row"><span>Priority</span><strong><span class="tag" :class="priorityClass(viewedBeneficiary.priority_type)">{{ viewedBeneficiary.priority_type || 'Regular' }}</span></strong></div>
+            <div class="detail-row"><span>Registered</span><strong>{{ formatDate(viewedBeneficiary.created_at) }}</strong></div>
+        </div>
+        <div class="modal-actions detail-modal-actions"><button type="button" class="cancel-button" @click="viewModal?.close()">Close</button><button type="button" class="primary-action" @click="viewModal?.close(); openEditModal(viewedBeneficiary)">Edit record</button></div>
     </AdminModal>
 
     <AdminModal ref="qrModal" class="form-modal qr-modal" @click.self="qrModal?.close()">
@@ -320,3 +339,40 @@ function priorityClass(priority) {
         <div class="modal-actions"><button type="button" class="cancel-button" @click="qrModal?.close()">Close</button></div>
     </AdminModal>
 </template>
+
+<style scoped>
+.form-modal.detail-modal {
+    width: min(520px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+    border: 1px solid #e5eaf0;
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(15, 35, 60, .2);
+}
+
+.detail-modal .detail-modal-title {
+    align-items: flex-start;
+    padding: 21px 24px 18px;
+}
+
+.detail-identity { display: flex; min-width: 0; align-items: center; gap: 13px; }
+.detail-avatar { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border-radius: 13px; background: #eff6ff; color: #2563eb; font-size: 14px; font-weight: 700; }
+.detail-heading-copy { min-width: 0; }
+.detail-heading-copy h3 { overflow-wrap: anywhere; color: #173b67; font-size: 17px; line-height: 1.3; }
+.detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; color: #71819a; font-size: 11px; }
+.detail-meta .tag { padding: 4px 8px; font-size: 10px; }
+.detail-modal .detail-modal-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 19px 24px 22px; }
+.detail-modal .detail-row { display: flex; min-width: 0; flex-direction: column; justify-content: flex-start; gap: 7px; padding: 12px 13px; border: 1px solid #edf1f5; border-radius: 10px; background: #fafbfd; font-size: 12px; }
+.detail-modal .detail-row span:first-child { color: #7b8797; font-size: 10px; font-weight: 700; letter-spacing: .045em; text-transform: uppercase; }
+.detail-modal .detail-row strong { overflow-wrap: anywhere; color: #263b53; font-size: 12px; font-weight: 600; text-align: left; }
+.detail-modal .detail-row-wide { grid-column: 1 / -1; }
+.detail-modal .detail-modal-actions { margin: 0; padding: 14px 24px 18px; border-top: 1px solid #edf1f5; }
+.detail-modal .detail-modal-actions .primary-action { min-height: 38px; border-radius: 8px; }
+.detail-modal .detail-modal-actions .cancel-button { padding: 9px 12px; }
+@media (max-width: 480px) {
+    .detail-modal .detail-modal-title { padding: 18px 18px 15px; }
+    .detail-modal .detail-modal-body { grid-template-columns: 1fr; padding: 16px 18px 18px; }
+    .detail-modal .detail-row-wide { grid-column: auto; }
+    .detail-modal .detail-modal-actions { padding: 12px 18px 16px; }
+}
+</style>
