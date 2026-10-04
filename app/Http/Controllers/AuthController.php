@@ -9,6 +9,10 @@ use App\Models\ReliefPackage;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class AuthController extends Controller
@@ -20,12 +24,36 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
+        $key = Str::transliterate(Str::lower($request->input('email', '')).'|'.$request->ip());
+
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            $seconds = RateLimiter::availableIn($key);
+            throw ValidationException::withMessages([
+                'email' => "Too many login attempts. Please try again in {$seconds} seconds.",
+            ]);
+        }
+
         $credentials = $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            RateLimiter::clear($key);
             $request->session()->regenerate();
             return redirect()->intended(route('dashboard'));
         }
+
+        RateLimiter::hit($key, 60);
         return back()->withErrors(['email' => 'The provided account details do not match our records.'])->onlyInput('email');
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $validated = $request->validate([
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()],
+        ]);
+
+        $request->user()->update(['password' => $validated['password']]);
+
+        return back()->with('success', 'Your password has been updated.');
     }
 
     public function dashboard() { 

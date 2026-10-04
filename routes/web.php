@@ -8,6 +8,7 @@ Route::redirect('/', '/login');
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
 Route::get('/dashboard', [AuthController::class, 'dashboard'])->middleware('auth')->name('dashboard');
+Route::put('/admin/account/password', [AuthController::class, 'updatePassword'])->middleware('auth')->name('admin.account.password');
 Route::get('/admin/beneficiaries', [AdminController::class, 'beneficiaries'])->middleware('auth')->name('admin.beneficiaries');
 Route::post('/admin/beneficiaries', [AdminController::class, 'storeBeneficiary'])->middleware('auth')->name('admin.beneficiaries.store');
 Route::put('/admin/beneficiaries/{id}', [AdminController::class, 'updateBeneficiary'])->middleware('auth')->name('admin.beneficiaries.update');

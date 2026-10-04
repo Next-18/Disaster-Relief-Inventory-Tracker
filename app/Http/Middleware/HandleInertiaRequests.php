@@ -53,6 +53,7 @@ class HandleInertiaRequests extends Middleware
                 'inventoryReportExport' => route('admin.reports.inventory-export'),
                 'auditLogs' => route('admin.audit-logs'),
                 'settings' => route('admin.settings'),
+                'passwordUpdate' => route('admin.account.password'),
                 'search' => route('admin.search'),
                 'logout' => route('logout'),
                 'loginAttempt' => route('login.attempt'),

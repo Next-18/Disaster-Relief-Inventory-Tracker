@@ -20,6 +20,7 @@ const form = useForm({
     notifications_enabled: Boolean(props.settings.notifications_enabled),
     auto_backup_enabled: Boolean(props.settings.auto_backup_enabled),
 });
+const passwordForm = useForm({ current_password: '', password: '', password_confirmation: '' });
 
 watch(() => props.settings, (settings) => {
     Object.assign(form, {
@@ -38,6 +39,14 @@ watch(() => props.settings, (settings) => {
 
 function saveSettings() {
     form.post(routes.value.settings, { preserveScroll: true });
+}
+
+function updatePassword() {
+    passwordForm.put(routes.value.passwordUpdate, {
+        preserveScroll: true,
+        onSuccess: () => passwordForm.reset(),
+        onError: () => passwordForm.reset(),
+    });
 }
 </script>
 
@@ -75,6 +84,18 @@ function saveSettings() {
             </div>
         </section>
     </form>
+    <section class="panel record-panel security-panel">
+        <div class="panel-heading"><div><h3>Account security</h3><p>Change the password for your signed-in administrator account.</p></div></div>
+        <form class="settings-fields" @submit.prevent="updatePassword">
+            <p class="password-guidance">Use at least 12 characters with uppercase and lowercase letters and a number.</p>
+            <div class="settings-grid two-columns">
+                <label class="current-password-field">Current password<input v-model="passwordForm.current_password" type="password" autocomplete="current-password" required><small v-if="passwordForm.errors.current_password" class="field-error">{{ passwordForm.errors.current_password }}</small></label>
+                <label>New password<input v-model="passwordForm.password" type="password" autocomplete="new-password" minlength="12" required><small v-if="passwordForm.errors.password" class="field-error">{{ passwordForm.errors.password }}</small></label>
+                <label>Confirm new password<input v-model="passwordForm.password_confirmation" type="password" autocomplete="new-password" minlength="12" required></label>
+            </div>
+            <div class="settings-actions"><button class="security-save" type="submit" :disabled="passwordForm.processing">{{ passwordForm.processing ? 'Updating…' : 'Update password' }}</button></div>
+        </form>
+    </section>
 </template>
 
 <style scoped>
@@ -86,10 +107,16 @@ function saveSettings() {
 .settings-grid { display: grid; gap: 10px; }
 .two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .three-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.current-password-field { grid-column: 1 / -1; }
 .timeout-field { max-width: 360px; }
 .checkbox-grid .checkbox-setting { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .checkbox-setting input { width: 18px; height: 18px; accent-color: #2563eb; }
 .settings-actions { display: flex; justify-content: flex-end; }
+.security-panel { margin-top: 18px; }
+.password-guidance { margin: 0; color: #718096; font-size: 12px; }
+.security-save { min-height: 38px; padding: 9px 14px; border: 1px solid #2563eb; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.security-save:hover { border-color: #1d4ed8; background: #1d4ed8; }
+.security-save:disabled { cursor: wait; opacity: .65; }
 .field-error { color: #b42318; }
 @media (max-width: 650px) { .two-columns, .three-columns { grid-template-columns: 1fr; } }
 </style>
