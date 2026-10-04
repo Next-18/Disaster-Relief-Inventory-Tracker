@@ -24,8 +24,8 @@ const groups = computed(() => [
 const resultCount = computed(() => groups.value.reduce((total, group) => total + group.items.length, 0));
 
 function description(group, item) {
-    if (group.key === 'beneficiaries') return `${item.beneficiary_no} · ${item.address || 'No address listed'}`;
-    if (group.key === 'inventory') return `${item.category} · ${Number(item.quantity).toLocaleString()} ${item.unit} in stock`;
+    if (group.key === 'beneficiaries') return [item.beneficiary_no, item.status, item.priority_type, item.address || 'No address listed'].filter(Boolean).join(' · ');
+    if (group.key === 'inventory') return [item.category, Number(item.quantity).toLocaleString() + ' ' + item.unit + ' in stock', item.status].filter(Boolean).join(' · ');
     if (group.key === 'packages') return `${item.category} · ${item.status}`;
     return `${formatDate(item.date_released)} · ${item.status}`;
 }

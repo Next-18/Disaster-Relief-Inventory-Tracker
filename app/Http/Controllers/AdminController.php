@@ -37,7 +37,9 @@ class AdminController extends Controller
                 $q->where('full_name', 'like', "%{$search}%")
                   ->orWhere('beneficiary_no', 'like', "%{$search}%")
                   ->orWhere('address', 'like', "%{$search}%")
-                  ->orWhere('contact_number', 'like', "%{$search}%");
+                  ->orWhere('contact_number', 'like', "%{$search}%")
+                  ->orWhere('priority_type', 'like', "%{$search}%")
+                  ->orWhere('status', 'like', "%{$search}%");
             });
         }
 
@@ -257,7 +259,8 @@ class AdminController extends Controller
             $query->where(function ($items) use ($search) {
                 $items->where('item_name', 'like', "%{$search}%")
                     ->orWhere('category', 'like', "%{$search}%")
-                    ->orWhere('unit', 'like', "%{$search}%");
+                    ->orWhere('unit', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%");
             });
         }
 
@@ -352,27 +355,31 @@ class AdminController extends Controller
                 $query->where('full_name', 'like', $like)
                     ->orWhere('beneficiary_no', 'like', $like)
                     ->orWhere('contact_number', 'like', $like)
-                    ->orWhere('address', 'like', $like);
+                    ->orWhere('address', 'like', $like)
+                    ->orWhere('priority_type', 'like', $like)
+                    ->orWhere('status', 'like', $like);
             })
             ->orderBy('full_name')
             ->limit(8)
-            ->get(['id', 'beneficiary_no', 'full_name', 'address', 'status']);
+            ->get(['id', 'beneficiary_no', 'full_name', 'address', 'status', 'priority_type']);
 
         $inventoryItems = InventoryItem::query()
             ->where(function ($query) use ($like) {
                 $query->where('item_name', 'like', $like)
                     ->orWhere('category', 'like', $like)
-                    ->orWhere('unit', 'like', $like);
+                    ->orWhere('unit', 'like', $like)
+                    ->orWhere('status', 'like', $like);
             })
             ->orderBy('item_name')
             ->limit(8)
-            ->get(['id', 'item_name', 'category', 'quantity', 'unit']);
+            ->get(['id', 'item_name', 'category', 'quantity', 'unit', 'status']);
 
         $packages = ReliefPackage::query()
             ->where(function ($query) use ($like) {
                 $query->where('package_name', 'like', $like)
                     ->orWhere('category', 'like', $like)
-                    ->orWhere('description', 'like', $like);
+                    ->orWhere('description', 'like', $like)
+                    ->orWhere('status', 'like', $like);
             })
             ->orderBy('package_name')
             ->limit(8)
@@ -406,7 +413,8 @@ class AdminController extends Controller
             $query->where(function ($packages) use ($search) {
                 $packages->where('package_name', 'like', "%{$search}%")
                     ->orWhere('category', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%");
             });
         }
 

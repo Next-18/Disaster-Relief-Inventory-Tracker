@@ -29,6 +29,7 @@ const filters = reactive({
 });
 const selectedIds = ref([]);
 const rowMenuId = ref(null);
+const bulkMenuOpen = ref(false);
 const beneficiaryModal = ref(null);
 const viewModal = ref(null);
 const qrModal = ref(null);
@@ -93,6 +94,8 @@ watch(() => props.filters, (next) => {
 }, { deep: true });
 
 onMounted(() => {
+    document.addEventListener('click', closeActionMenus);
+    document.addEventListener('keydown', closeActionMenusOnEscape);
     if (new URLSearchParams(window.location.search).get('action') === 'add') {
         openAddModal();
         const url = new URL(window.location.href);
@@ -100,7 +103,23 @@ onMounted(() => {
         window.history.replaceState(window.history.state, '', url);
     }
 });
-onBeforeUnmount(() => clearTimeout(searchTimer));
+onBeforeUnmount(() => {
+    clearTimeout(searchTimer);
+    document.removeEventListener('click', closeActionMenus);
+    document.removeEventListener('keydown', closeActionMenusOnEscape);
+});
+
+function closeActionMenus(event) {
+    if (!event.target.closest?.('.beneficiary-bulk-actions')) bulkMenuOpen.value = false;
+    if (!event.target.closest?.('.row-actions-dropdown')) rowMenuId.value = null;
+}
+
+function closeActionMenusOnEscape(event) {
+    if (event.key === 'Escape') {
+        bulkMenuOpen.value = false;
+        rowMenuId.value = null;
+    }
+}
 
 function openAddModal() {
     form.reset();
@@ -146,8 +165,12 @@ function toggleSelected(id) {
         : [...selectedIds.value, id];
 }
 
-function toggleAll(checked) {
-    selectedIds.value = checked ? rows.value.map((row) => row.id) : [];
+function toggleAllOnPage() {
+    const pageIds = rows.value.map((row) => row.id);
+    selectedIds.value = allSelected.value
+        ? selectedIds.value.filter((id) => !pageIds.includes(id))
+        : [...new Set([...selectedIds.value, ...pageIds])];
+    bulkMenuOpen.value = false;
 }
 
 function clearSelection() {
@@ -254,19 +277,31 @@ function priorityClass(priority) {
                     <select v-model="filters.priority_type" class="filter-select" aria-label="Filter by priority" @change="visitFilters()"><option value="all">All priorities</option><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select>
                     <select v-model.number="filters.per_page" class="filter-select per-page-select" aria-label="Rows per page" @change="visitFilters()"><option :value="10">10 / page</option><option :value="25">25 / page</option><option :value="50">50 / page</option></select>
                 </form>
+                <div class="row-actions-dropdown beneficiary-bulk-actions">
+                    <button type="button" class="row-actions-btn" title="Bulk actions" aria-label="Bulk actions" :aria-expanded="bulkMenuOpen" @click.stop="bulkMenuOpen = !bulkMenuOpen; rowMenuId = null">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                    </button>
+                    <div v-if="bulkMenuOpen" class="row-actions-menu show bulk-actions-menu">
+                        <button type="button" class="row-action-item" @click="toggleAllOnPage">{{ allSelected ? 'Unmark this page' : 'Mark all on this page' }}</button>
+                        <button type="button" class="row-action-item" :disabled="!selectedIds.length" @click="clearSelection(); bulkMenuOpen = false">Clear all marks</button>
+                        <div class="bulk-action-divider"/>
+                        <button type="button" class="row-action-item" :disabled="!selectedIds.length || bulkForm.processing" @click="setBulkStatus('Active'); bulkMenuOpen = false">Mark selected active</button>
+                        <button type="button" class="row-action-item" :disabled="!selectedIds.length || bulkForm.processing" @click="setBulkStatus('Inactive'); bulkMenuOpen = false">Mark selected inactive</button>
+                        <button type="button" class="row-action-item row-action-danger" :disabled="!selectedIds.length || bulkForm.processing" @click="bulkDelete(); bulkMenuOpen = false">Delete selected</button>
+                    </div>
+                </div>
                 <a :href="exportHref" class="action-btn export-btn" title="Export filtered results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</a>
             </div>
         </div>
 
         <div v-if="selectedIds.length" class="selection-bar">
-            <span><strong>{{ selectedIds.length }}</strong> selected on this page</span>
-            <div class="selection-bar-actions"><button type="button" class="action-btn" :disabled="bulkForm.processing" @click="setBulkStatus('Active')">Set active</button><button type="button" class="action-btn" :disabled="bulkForm.processing" @click="setBulkStatus('Inactive')">Set inactive</button><button type="button" class="action-btn delete" :disabled="bulkForm.processing" @click="bulkDelete">{{ bulkForm.processing ? 'Saving…' : 'Delete' }}</button><button type="button" class="filter-clear" @click="clearSelection">Clear</button></div>
+            <span><strong>{{ selectedIds.length }}</strong> records marked</span>
+            <button type="button" class="filter-clear" @click="clearSelection">Clear marks</button>
         </div>
 
         <div class="table-wrap">
             <table class="record-table beneficiaries-table">
                 <thead><tr>
-                    <th class="checkbox-col"><input type="checkbox" :checked="allSelected" aria-label="Select all on page" @change="toggleAll($event.target.checked)"></th>
                     <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'full_name' }" @click="sortBy('full_name')">Beneficiary <span class="sort-indicator">{{ filters.sort === 'full_name' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
                     <th>Contact</th>
                     <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'household_size' }" @click="sortBy('household_size')">Household <span class="sort-indicator">{{ filters.sort === 'household_size' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
@@ -276,7 +311,6 @@ function priorityClass(priority) {
                 </tr></thead>
                 <tbody>
                     <tr v-for="beneficiary in rows" :key="beneficiary.id" class="beneficiary-row" :class="{ selected: selectedIds.includes(beneficiary.id) }">
-                        <td class="checkbox-col"><input type="checkbox" :checked="selectedIds.includes(beneficiary.id)" :aria-label="`Select ${beneficiary.full_name}`" @change="toggleSelected(beneficiary.id)"></td>
                         <td><button type="button" class="beneficiary-name-btn view-beneficiary-btn" @click="showDetails(beneficiary)"><div class="beneficiary-cell"><div class="avatar" :class="`a${(beneficiary.id % 4) + 1}`">{{ beneficiary.full_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() }}</div><div><b>{{ beneficiary.full_name }}</b><small>{{ beneficiary.beneficiary_no }} — {{ beneficiary.address || 'No address listed' }}</small></div></div></button></td>
                         <td>{{ beneficiary.contact_number || '—' }}</td>
                         <td>{{ beneficiary.household_size || '—' }} members</td>
@@ -285,6 +319,8 @@ function priorityClass(priority) {
                         <td class="actions-cell"><div class="row-actions-dropdown">
                             <button type="button" class="row-actions-btn" :aria-expanded="rowMenuId === beneficiary.id" :aria-label="`Actions for ${beneficiary.full_name}`" @click="rowMenuId = rowMenuId === beneficiary.id ? null : beneficiary.id"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
                             <div v-if="rowMenuId === beneficiary.id" class="row-actions-menu show">
+                                <button type="button" class="row-action-item" @click="toggleSelected(beneficiary.id); rowMenuId = null">{{ selectedIds.includes(beneficiary.id) ? 'Unmark record' : 'Mark record' }}</button>
+                                <div class="bulk-action-divider"/>
                                 <button type="button" class="row-action-item" @click="showDetails(beneficiary)">View details</button>
                                 <button type="button" class="row-action-item" @click="rowMenuId = null; openEditModal(beneficiary)">Edit</button>
                                 <button v-if="beneficiary.qr_code" type="button" class="row-action-item" @click="showQr(beneficiary)">View QR code</button>
@@ -293,7 +329,7 @@ function priorityClass(priority) {
                             </div>
                         </div></td>
                     </tr>
-                    <tr v-if="!rows.length"><td colspan="7"><div class="empty-state"><div class="empty-state-icon">♟</div><h4>{{ activeFilters ? 'No matches found' : 'No beneficiaries yet' }}</h4><p>{{ activeFilters ? 'Try adjusting your search or filters.' : 'Add your first household record to get started.' }}</p><button v-if="activeFilters" type="button" class="primary-action" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear filters</button><button v-else type="button" class="primary-action" @click="openAddModal">Add beneficiary</button></div></td></tr>
+                    <tr v-if="!rows.length"><td colspan="6"><div class="empty-state"><div class="empty-state-icon">♟</div><h4>{{ activeFilters ? 'No matches found' : 'No beneficiaries yet' }}</h4><p>{{ activeFilters ? 'Try adjusting your search or filters.' : 'Add your first household record to get started.' }}</p><button v-if="activeFilters" type="button" class="primary-action" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear filters</button><button v-else type="button" class="primary-action" @click="openAddModal">Add beneficiary</button></div></td></tr>
                 </tbody>
             </table>
         </div>
@@ -341,6 +377,9 @@ function priorityClass(priority) {
 </template>
 
 <style scoped>
+.beneficiary-bulk-actions { flex: 0 0 auto; }
+.bulk-actions-menu { min-width: 195px; }
+.bulk-actions-menu .row-action-item:disabled { color: #a0aec0; cursor: not-allowed; background: transparent; }
 .form-modal.detail-modal {
     width: min(520px, calc(100vw - 32px));
     max-height: calc(100dvh - 32px);
