@@ -22,6 +22,44 @@ class AuthController extends Controller
         return Auth::check() ? redirect()->route('dashboard') : Inertia::render('Auth/Login');
     }
 
+    public function showRegister()
+    {
+        return Auth::check() ? redirect()->route('dashboard') : Inertia::render('Auth/Register');
+    }
+
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'full_name' => ['required', 'string', 'max:255'],
+            'beneficiary_no' => ['required', 'string', 'max:20'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        // Check if beneficiary exists
+        $beneficiary = Beneficiary::where('beneficiary_no', $validated['beneficiary_no'])->first();
+        
+        if (!$beneficiary) {
+            return back()->withErrors(['beneficiary_no' => 'Beneficiary number not found. Please contact admin for assistance.']);
+        }
+
+        // Check if user already exists for this beneficiary
+        if ($beneficiary->user) {
+            return back()->withErrors(['beneficiary_no' => 'An account already exists for this beneficiary.']);
+        }
+
+        // Create user account
+        User::create([
+            'name' => $validated['full_name'],
+            'email' => $validated['beneficiary_no'], // Use beneficiary number as username
+            'password' => bcrypt($validated['password']),
+            'beneficiary_id' => $beneficiary->id,
+            'role' => 'user',
+            'password_changed' => true, // User created their own password
+        ]);
+
+        return redirect()->route('login')->with('success', 'Account created successfully. Please login with your beneficiary number and password.');
+    }
+
     public function login(Request $request)
     {
         $key = Str::transliterate(Str::lower($request->input('email', '')).'|'.$request->ip());
@@ -33,7 +71,7 @@ class AuthController extends Controller
             ]);
         }
 
-        $credentials = $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
+        $credentials = $request->validate(['email' => ['required'], 'password' => ['required', 'string']]);
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             RateLimiter::clear($key);
             $request->session()->regenerate();
@@ -42,6 +80,25 @@ class AuthController extends Controller
 
         RateLimiter::hit($key, 60);
         return back()->withErrors(['email' => 'The provided account details do not match our records.'])->onlyInput('email');
+    }
+
+    public function showChangePassword()
+    {
+        return Inertia::render('Auth/ChangePassword');
+    }
+
+    public function changePassword(Request $request)
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
+        ]);
+
+        $request->user()->update([
+            'password' => $validated['password'],
+            'password_changed' => true
+        ]);
+
+        return redirect()->route('dashboard')->with('success', 'Your password has been updated successfully.');
     }
 
     public function updatePassword(Request $request)

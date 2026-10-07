@@ -18,6 +18,7 @@ const props = defineProps({
 
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
+const credentials = computed(() => page.props.flash.user_credentials ?? null);
 const filters = reactive({
     search: props.filters.search ?? '',
     status: props.filters.status ?? 'all',
@@ -36,7 +37,16 @@ const qrModal = ref(null);
 const viewedBeneficiary = ref(null);
 const qrBeneficiary = ref(null);
 const editingId = ref(null);
-const form = useForm({ full_name: '', contact_number: '', address: '', household_size: '', priority_type: 'Regular', status: 'Active' });
+const form = useForm({
+    full_name: '',
+    contact_number: '',
+    address: '',
+    household_size: '',
+    priority_type: 'Regular',
+    status: 'Active',
+    password: '',
+    password_confirmation: ''
+});
 const bulkForm = useForm({ ids: [], status: 'Active' });
 let searchTimer;
 let lastSubmittedSearch = filters.search.trim();
@@ -121,9 +131,19 @@ function closeActionMenusOnEscape(event) {
     }
 }
 
+function closeCredentialsModal() {
+    // Clear credentials from flash
+    router.visit(window.location.href, {
+        method: 'get',
+        preserveState: true,
+        preserveScroll: true,
+    });
+}
+
 function openAddModal() {
     form.reset();
     form.clearErrors();
+    form.create_user_account = false;
     editingId.value = null;
     beneficiaryModal.value?.showModal();
 }
@@ -344,6 +364,43 @@ function priorityClass(priority) {
             <label>Address<input v-model="form.address" maxlength="255" placeholder="Enter complete address"><small v-if="form.errors.address" class="field-error">{{ form.errors.address }}</small></label>
             <div class="form-row"><label>Household size<input v-model="form.household_size" type="number" min="1" max="99" placeholder="Members"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
             <label>Status<select v-model="form.status" required><option>Active</option><option>Inactive</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
+
+            <!-- User Account Creation Section -->
+            <div v-if="!editingId" class="user-account-section">
+                <div class="section-header">
+                    <h4>User Account</h4>
+                    <p>A login account will be automatically created for this beneficiary</p>
+                </div>
+                <label>Password
+                    <input
+                        v-model="form.password"
+                        type="password"
+                        required
+                        placeholder="Enter password (min 8 characters)"
+                        :class="{ 'input-error': form.errors.password }"
+                    >
+                    <small v-if="form.errors.password" class="field-error">{{ form.errors.password }}</small>
+                </label>
+                <label>Confirm Password
+                    <input
+                        v-model="form.password_confirmation"
+                        type="password"
+                        required
+                        placeholder="Confirm password"
+                        :class="{ 'input-error': form.errors.password_confirmation }"
+                    >
+                    <small v-if="form.errors.password_confirmation" class="field-error">{{ form.errors.password_confirmation }}</small>
+                </label>
+                <div class="account-info">
+                    <strong>Account will be created with:</strong>
+                    <ul>
+                        <li>Username: <span class="highlight">Beneficiary Number (auto-generated)</span></li>
+                        <li>Password: <span class="highlight">Password you set above</span></li>
+                        <li>Role: <span class="highlight">User</span></li>
+                    </ul>
+                </div>
+            </div>
+
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="beneficiaryModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update beneficiary' : 'Save beneficiary' }}</button></div>
         </form>
     </AdminModal>
@@ -374,6 +431,31 @@ function priorityClass(priority) {
         <div v-if="qrBeneficiary" class="qr-display"><img :src="`${routes.qrBase}/${qrBeneficiary.qr_code}`" :alt="`QR code for ${qrBeneficiary.full_name}`"></div>
         <div class="modal-actions"><button type="button" class="cancel-button" @click="qrModal?.close()">Close</button></div>
     </AdminModal>
+
+    <!-- Credentials Display Modal -->
+    <AdminModal v-if="credentials" class="form-modal" @click.self="closeCredentialsModal">
+        <div class="modal-title">
+            <h3>User Account Created</h3>
+            <p>Here are the login credentials for {{ credentials.beneficiary_name }}:</p>
+        </div>
+        <div class="credentials-display">
+            <div class="credential-item">
+                <label>Username (Beneficiary Number):</label>
+                <div class="credential-value">{{ credentials.username }}</div>
+            </div>
+            <div class="credential-item">
+                <label>Password:</label>
+                <div class="credential-value">{{ credentials.password }}</div>
+            </div>
+            <div class="security-notice">
+                <strong>Security Notice:</strong>
+                <p>Please provide these credentials to the beneficiary securely. They can use them to log in immediately.</p>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="primary-action" @click="closeCredentialsModal">I've saved the credentials</button>
+        </div>
+    </AdminModal>
 </template>
 
 <style scoped>
@@ -388,6 +470,106 @@ function priorityClass(priority) {
     border-radius: 16px;
     box-shadow: 0 24px 64px rgba(15, 35, 60, .2);
 }
+
+/* User Account Section */
+.user-account-section {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+.section-header {
+    margin-bottom: 16px;
+}
+.section-header h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0 0 4px 0;
+}
+.section-header p {
+    font-size: 12px;
+    color: #64748b;
+    margin: 0;
+}
+.account-info {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+}
+.account-info strong {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 8px;
+}
+.account-info ul {
+    margin: 0;
+    padding-left: 20px;
+    list-style-type: disc;
+}
+.account-info li {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+.account-info .highlight {
+    color: #1e293b;
+    font-weight: 500;
+}
+
+/* Credentials Modal */
+.credentials-display {
+    padding: 20px 0;
+}
+.credential-item {
+    margin-bottom: 20px;
+}
+.credential-item label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.credential-value {
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1e293b;
+    letter-spacing: 1px;
+}
+.security-notice {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 20px;
+}
+.security-notice strong {
+    display: block;
+    color: #92400e;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+.security-notice p {
+    color: #78350f;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+
 
 .detail-modal .detail-modal-title {
     align-items: flex-start;

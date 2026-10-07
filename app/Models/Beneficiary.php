@@ -12,4 +12,9 @@ class Beneficiary extends Model
     {
         return $this->hasMany(Distribution::class, 'beneficiary_id');
     }
+
+    public function user()
+    {
+        return $this->hasOne(User::class);
+    }
 }

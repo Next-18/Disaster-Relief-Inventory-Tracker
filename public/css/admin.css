@@ -211,6 +211,8 @@ body {
 .bulk-action-danger:hover { background: #fef2f2; }
 .bulk-action-danger svg { color: #ef4444; }
 
+
+
 /* User Info */
 .user-info { 
     display: flex; 

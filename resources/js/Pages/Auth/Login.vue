@@ -25,7 +25,7 @@ function submit() {
             </aside>
             <section class="form-panel">
                 <h2>Admin / Staff Login</h2>
-                <p class="intro">Use your barangay-issued account. Beneficiaries cannot log in here.</p>
+                <p class="intro">Use your barangay-issued account. Beneficiaries can <a :href="routes.register">register here</a>.</p>
                 <div v-if="firstError" class="notice" role="alert">{{ firstError }}</div>
                 <form @submit.prevent="submit">
                     <label for="email">Email address</label>

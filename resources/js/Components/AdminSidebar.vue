@@ -19,6 +19,7 @@ const links = computed(() => [
     { label: 'Distribution', href: routes.value.distribution, icon: 'distribution' },
     { label: 'Reports', href: routes.value.reports, icon: 'reports' },
     { label: 'Audit Logs', href: routes.value.auditLogs, icon: 'audit' },
+    { label: 'Users', href: routes.value.users, icon: 'users' },
     { label: 'Settings', href: routes.value.settings, icon: 'settings' },
 ]);
 
@@ -51,6 +52,7 @@ const isActive = (href) => Boolean(href) && currentPath.value === new URL(href, 
                     <template v-else-if="link.icon === 'distribution'"><path d="M4 11h16v8H4zM7 11V7h10v4M8 15h8"/></template>
                     <template v-else-if="link.icon === 'reports'"><path d="M4 20V4M4 20h16M8 17v-5M12 17V7M16 17v-8"/></template>
                     <template v-else-if="link.icon === 'audit'"><path d="M7 3h10v18H7zM10 7h4M10 11h4M10 15h4M4 7h3M4 11h3M4 15h3"/></template>
+                    <template v-else-if="link.icon === 'users'"><path d="M16 10c0-2.2-1.8-4-4-4s-4 1.8-4 4c0 1.5.8 2.8 2 3.5V16h4v-2.5c1.2-.7 2-2 2-3.5zM9 12c-1.7 0-3-1.3-3-3s1.3-3 3-3c.6 0 1.1.2 1.6.5.6-.9 1.5-1.5 2.4-1.5 1.7 0 3 1.3 3 3s-1.3 3-3 3c-.6 0-1.1-.2-1.6-.5-.6.9-1.5 1.5-2.4 1.5z"/></template>
                     <template v-else><circle cx="12" cy="12" r="3"/><path d="M19 12h2M3 12h2M12 3v2M12 19v2M17 7l1-1M6 18l1-1M17 17l1 1M6 6l1 1"/></template>
                 </svg>
                 <span>{{ link.label }}</span>

@@ -8,6 +8,7 @@ use App\Models\Distribution;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -98,7 +99,7 @@ class AdminController extends Controller
 
     protected function beneficiaryValidationRules($id = null): array
     {
-        return [
+        $rules = [
             'full_name' => ['required', 'string', 'max:255'],
             'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-\s()]*$/'],
             'address' => ['nullable', 'string', 'max:255'],
@@ -106,18 +107,25 @@ class AdminController extends Controller
             'priority_type' => ['required', 'in:Regular,Senior Citizen,PWD,Solo Parent'],
             'status' => ['required', 'in:Active,Inactive'],
         ];
+
+        // Password is required when creating a new beneficiary (to create user account)
+        if (!$id) {
+            $rules['password'] = ['required', 'string', 'min:8', 'confirmed'];
+        }
+
+        return $rules;
     }
 
     public function storeBeneficiary(Request $request)
     {
         $data = $request->validate($this->beneficiaryValidationRules());
-        
+
         // Check for duplicate name
         $existingByName = Beneficiary::where('full_name', $data['full_name'])->first();
         if ($existingByName) {
             return back()->withInput()->withErrors(['full_name' => 'A beneficiary with this name already exists.']);
         }
-        
+
         // Check for duplicate contact number
         if (!empty($data['contact_number'])) {
             $existingByPhone = Beneficiary::where('contact_number', $data['contact_number'])->first();
@@ -125,10 +133,34 @@ class AdminController extends Controller
                 return back()->withInput()->withErrors(['contact_number' => 'A beneficiary with this contact number already exists.']);
             }
         }
-        
+
         $data['beneficiary_no'] = 'BEN-' . str_pad((string) ((Beneficiary::max('id') ?? 0) + 1001), 4, '0', STR_PAD_LEFT);
         $beneficiary = Beneficiary::create($data);
+
+        // Always create user account when adding a new beneficiary
+        $password = $request->input('password');
+
+        User::create([
+            'name' => $beneficiary->full_name,
+            'email' => $beneficiary->beneficiary_no, // Use beneficiary number as username
+            'password' => bcrypt($password),
+            'beneficiary_id' => $beneficiary->id,
+            'role' => 'user',
+        ]);
+
+        $credentials = [
+            'username' => $beneficiary->beneficiary_no,
+            'password' => $password,
+            'beneficiary_name' => $beneficiary->full_name,
+        ];
+
+        $this->logAudit('create', 'users', "Created user account for beneficiary: {$beneficiary->full_name}");
         $this->logAudit('create', 'beneficiaries', "Created beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
+        
+        if ($credentials) {
+            session()->flash('user_credentials', $credentials);
+        }
+        
         return redirect()->back()->with('success', 'Beneficiary added successfully.');
     }
 
@@ -966,5 +998,110 @@ class AdminController extends Controller
                 ]);
             }
         }
+    }
+
+    public function users()
+    {
+        $users = User::with('beneficiary')->latest()->paginate(10);
+        
+        return inertia('Admin/Users', [
+            'users' => $users
+        ]);
+    }
+
+    public function storeUser(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'role' => ['required', 'string', 'in:admin,user'],
+        ]);
+
+        $data['password'] = bcrypt($data['password']);
+        $data['password_changed'] = true; // Admin accounts don't need forced change
+        
+        $user = User::create($data);
+        
+        $this->logAudit('create', 'users', "Created admin account for: {$user->name}");
+        
+        return redirect()->route('admin.users')->with('success', 'Admin account created successfully.');
+    }
+
+    private function generateSecurePassword()
+    {
+        $length = 12;
+        $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*';
+        $charactersLength = strlen($characters);
+        $randomPassword = '';
+        
+        for ($i = 0; $i < $length; $i++) {
+            $randomPassword .= $characters[rand(0, $charactersLength - 1)];
+        }
+        
+        return $randomPassword;
+    }
+
+    private function generateEasyPassword($fullName)
+    {
+        // Generate easy-to-remember password based on name
+        $words = explode(' ', $fullName);
+        $firstWord = strtolower($words[0]);
+        $password = '';
+        
+        // Use first word + random 2-digit number
+        $password = $firstWord . rand(10, 99);
+        
+        // Add a special character for security
+        $specialChars = ['!', '@', '#', '$'];
+        $password .= $specialChars[array_rand($specialChars)];
+        
+        // Capitalize first letter
+        $password = ucfirst($password);
+        
+        return $password;
+    }
+
+    public function updateUser(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+        
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $id],
+            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'beneficiary_id' => ['nullable', 'exists:beneficiaries,id'],
+            'role' => ['required', 'string', 'in:admin,user'],
+        ]);
+
+        if (!empty($data['password'])) {
+            $data['password'] = bcrypt($data['password']);
+            $data['password_changed'] = true; // Mark as changed when admin updates password
+        } else {
+            unset($data['password']);
+        }
+
+        $user->update($data);
+        
+        $beneficiaryName = $user->beneficiary ? $user->beneficiary->full_name : 'No beneficiary linked';
+        $this->logAudit('update', 'users', "Updated user account for: {$beneficiaryName}");
+        
+        return redirect()->route('admin.users')->with('success', 'User account updated successfully.');
+    }
+
+    public function deleteUser($id)
+    {
+        $user = User::findOrFail($id);
+        
+        if ($user->id === auth()->id()) {
+            return back()->with('error', 'You cannot delete your own account.');
+        }
+        
+        $beneficiaryName = $user->beneficiary ? $user->beneficiary->full_name : 'No beneficiary linked';
+        $user->delete();
+        
+        $this->logAudit('delete', 'users', "Deleted user account for: {$beneficiaryName}");
+        
+        return redirect()->route('admin.users')->with('success', 'User account deleted successfully.');
     }
 }
