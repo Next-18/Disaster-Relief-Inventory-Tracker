@@ -36,6 +36,7 @@ Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->middlewar
 // Beneficiary routes
 Route::get('/beneficiaries', [BeneficiaryController::class, 'index'])->middleware('auth:sanctum');
 Route::get('/beneficiaries/{id}', [BeneficiaryController::class, 'show'])->middleware('auth:sanctum');
+Route::put('/beneficiaries/{id}', [BeneficiaryController::class, 'update'])->middleware('auth:sanctum');
 Route::get('/beneficiaries/qr/{qrCode}', [BeneficiaryController::class, 'showByQrCode'])->middleware('auth:sanctum');
 
 // Inventory routes
