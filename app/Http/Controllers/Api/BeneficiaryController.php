@@ -78,7 +78,7 @@ class BeneficiaryController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
             'current_password' => ['nullable', 'required_with:new_password', 'string'],
-            'new_password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'new_password' => ['nullable', 'string', 'min:6', 'confirmed'],
         ]);
 
         if (!empty($validated['full_name'])) {

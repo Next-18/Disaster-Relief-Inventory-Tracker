@@ -19,7 +19,6 @@ class AuthController extends Controller
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'address' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
         $registration = DB::transaction(function () use ($validated) {
@@ -31,25 +30,50 @@ class AuthController extends Controller
                 'status' => 'Active',
             ]);
 
+            // Generate unique beneficiary number
+            $beneficiaryNo = null;
+            $maxAttempts = 100;
+            $attempts = 0;
+
+            do {
+                $beneficiaryNo = 'BEN-' . str_pad((string) ($beneficiary->id + 1000 + $attempts), 4, '0', STR_PAD_LEFT);
+                $attempts++;
+
+                // Check if beneficiary number exists in beneficiaries table
+                $existsInBeneficiaries = Beneficiary::where('beneficiary_no', $beneficiaryNo)->exists();
+                // Check if beneficiary number exists in users table (as email)
+                $existsInUsers = User::where('email', $beneficiaryNo)->exists();
+
+                if (!$existsInBeneficiaries && !$existsInUsers) {
+                    break;
+                }
+            } while ($attempts < $maxAttempts);
+
+            if ($attempts >= $maxAttempts) {
+                throw new \Exception('Could not generate a unique beneficiary number.');
+            }
+
             $beneficiary->update([
-                'beneficiary_no' => 'BEN-' . str_pad((string) ($beneficiary->id + 1000), 4, '0', STR_PAD_LEFT),
+                'beneficiary_no' => $beneficiaryNo,
             ]);
+
+            $tempPassword = $this->generateTemporaryPassword();
 
             $user = User::create([
                 'name' => $beneficiary->full_name,
                 'email' => $beneficiary->beneficiary_no,
-                'password' => $validated['password'],
+                'password' => $tempPassword,
                 'beneficiary_id' => $beneficiary->id,
                 'role' => 'user',
+                'password_changed' => false,
             ]);
-            $user->forceFill(['password_changed' => true])->save();
 
-            return compact('beneficiary', 'user');
+            return compact('beneficiary', 'user', 'tempPassword');
         });
 
         return response()->json([
             'success' => true,
-            'message' => 'Registration successful.',
+            'message' => 'Registration successful. Give the beneficiary this temporary password: ' . $registration['tempPassword'],
             'data' => [
                 'beneficiary' => [
                     'id' => $registration['beneficiary']->id,
@@ -61,8 +85,19 @@ class AuthController extends Controller
                     'id' => $registration['user']->id,
                     'name' => $registration['user']->name,
                 ],
+                'temporary_password' => $registration['tempPassword'],
             ],
         ], 201);
+    }
+
+    private function generateTemporaryPassword()
+    {
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        $password = '';
+        for ($i = 0; $i < 6; $i++) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+        return $password;
     }
     public function login(Request $request)
     {
@@ -100,6 +135,7 @@ class AuthController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'beneficiary_no' => $user->email,
+                    'password_changed' => (bool) $user->password_changed,
                 ],
                 'token' => $token,
                 'token_type' => 'Bearer',
@@ -130,6 +166,31 @@ class AuthController extends Controller
                     'email' => $user->email,
                 ],
             ],
+        ]);
+    }
+
+    public function changePassword(Request $request)
+    {
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password' => ['required', 'string', 'min:6', 'confirmed'],
+        ]);
+
+        $user = $request->user();
+
+        if (!\Illuminate\Support\Facades\Hash::check($validated['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['Your current password is incorrect.'],
+            ]);
+        }
+
+        $user->password = $validated['new_password'];
+        $user->password_changed = true;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password changed successfully.',
         ]);
     }
 }

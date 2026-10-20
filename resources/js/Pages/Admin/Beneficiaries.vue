@@ -1,6 +1,6 @@
 <script setup>
 import { router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import AdminModal from '../../Components/AdminModal.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
@@ -34,9 +34,11 @@ const bulkMenuOpen = ref(false);
 const beneficiaryModal = ref(null);
 const viewModal = ref(null);
 const qrModal = ref(null);
+const credentialsModal = ref(null);
 const viewedBeneficiary = ref(null);
 const qrBeneficiary = ref(null);
 const editingId = ref(null);
+const showCredentials = ref(false);
 const form = useForm({
     full_name: '',
     contact_number: '',
@@ -44,8 +46,6 @@ const form = useForm({
     household_size: '',
     priority_type: 'Regular',
     status: 'Active',
-    password: '',
-    password_confirmation: ''
 });
 const bulkForm = useForm({ ids: [], status: 'Active' });
 let searchTimer;
@@ -113,6 +113,23 @@ onMounted(() => {
         window.history.replaceState(window.history.state, '', url);
     }
 });
+
+// Auto-open credentials modal when available
+watch(credentials, (newCredentials) => {
+    if (newCredentials) {
+        showCredentials.value = true;
+        nextTick(() => {
+            credentialsModal.value?.showModal();
+        });
+    }
+}, { immediate: true });
+
+function openCredentialsModal() {
+    showCredentials.value = true;
+    nextTick(() => {
+        credentialsModal.value?.showModal();
+    });
+}
 onBeforeUnmount(() => {
     clearTimeout(searchTimer);
     document.removeEventListener('click', closeActionMenus);
@@ -163,6 +180,7 @@ function openEditModal(beneficiary) {
 function saveBeneficiary() {
     const options = {
         preserveScroll: true,
+        preserveState: false,
         onSuccess: () => {
             beneficiaryModal.value?.close();
             form.reset();
@@ -274,6 +292,15 @@ function priorityClass(priority) {
         </button>
     </section>
 
+    <!-- Credentials Alert Banner -->
+    <div v-if="credentials" class="credentials-alert">
+        <div>
+            <strong>New user account created!</strong>
+            <span>Click to view the temporary password for {{ credentials.beneficiary_name }}</span>
+        </div>
+        <button type="button" class="view-credentials-btn" @click="openCredentialsModal">View Credentials</button>
+    </div>
+
     <div v-if="activeFilters" class="active-filters">
         <span class="active-filters-label">Filters:</span>
         <button v-if="filters.search" type="button" class="filter-chip" @click="filters.search = ''">Search: {{ filters.search }} ×</button>
@@ -365,42 +392,6 @@ function priorityClass(priority) {
             <div class="form-row"><label>Household size<input v-model="form.household_size" type="number" min="1" max="99" placeholder="Members"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
             <label>Status<select v-model="form.status" required><option>Active</option><option>Inactive</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
 
-            <!-- User Account Creation Section -->
-            <div v-if="!editingId" class="user-account-section">
-                <div class="section-header">
-                    <h4>User Account</h4>
-                    <p>A login account will be automatically created for this beneficiary</p>
-                </div>
-                <label>Password
-                    <input
-                        v-model="form.password"
-                        type="password"
-                        required
-                        placeholder="Enter password (min 8 characters)"
-                        :class="{ 'input-error': form.errors.password }"
-                    >
-                    <small v-if="form.errors.password" class="field-error">{{ form.errors.password }}</small>
-                </label>
-                <label>Confirm Password
-                    <input
-                        v-model="form.password_confirmation"
-                        type="password"
-                        required
-                        placeholder="Confirm password"
-                        :class="{ 'input-error': form.errors.password_confirmation }"
-                    >
-                    <small v-if="form.errors.password_confirmation" class="field-error">{{ form.errors.password_confirmation }}</small>
-                </label>
-                <div class="account-info">
-                    <strong>Account will be created with:</strong>
-                    <ul>
-                        <li>Username: <span class="highlight">Beneficiary Number (auto-generated)</span></li>
-                        <li>Password: <span class="highlight">Password you set above</span></li>
-                        <li>Role: <span class="highlight">User</span></li>
-                    </ul>
-                </div>
-            </div>
-
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="beneficiaryModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update beneficiary' : 'Save beneficiary' }}</button></div>
         </form>
     </AdminModal>
@@ -433,7 +424,7 @@ function priorityClass(priority) {
     </AdminModal>
 
     <!-- Credentials Display Modal -->
-    <AdminModal v-if="credentials" class="form-modal" @click.self="closeCredentialsModal">
+    <AdminModal ref="credentialsModal" v-if="credentials" class="form-modal" @click.self="closeCredentialsModal">
         <div class="modal-title">
             <h3>User Account Created</h3>
             <p>Here are the login credentials for {{ credentials.beneficiary_name }}:</p>
@@ -444,12 +435,12 @@ function priorityClass(priority) {
                 <div class="credential-value">{{ credentials.username }}</div>
             </div>
             <div class="credential-item">
-                <label>Password:</label>
+                <label>Temporary Password:</label>
                 <div class="credential-value">{{ credentials.password }}</div>
             </div>
             <div class="security-notice">
                 <strong>Security Notice:</strong>
-                <p>Please provide these credentials to the beneficiary securely. They can use them to log in immediately.</p>
+                <p>Please provide these credentials to the beneficiary securely. This is a temporary password - they will be required to set their own password on first login.</p>
             </div>
         </div>
         <div class="modal-actions">
@@ -471,55 +462,46 @@ function priorityClass(priority) {
     box-shadow: 0 24px 64px rgba(15, 35, 60, .2);
 }
 
-/* User Account Section */
-.user-account-section {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+/* Credentials Alert Banner */
+.credentials-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 12px;
-    padding: 20px;
-    margin-top: 20px;
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
-.section-header {
-    margin-bottom: 16px;
+.credentials-alert div {
+    flex: 1;
 }
-.section-header h4 {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1e293b;
-    margin: 0 0 4px 0;
-}
-.section-header p {
-    font-size: 12px;
-    color: #64748b;
-    margin: 0;
-}
-.account-info {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 16px;
-    margin-top: 12px;
-}
-.account-info strong {
+.credentials-alert strong {
     display: block;
-    font-size: 12px;
-    font-weight: 600;
-    color: #475569;
-    margin-bottom: 8px;
-}
-.account-info ul {
-    margin: 0;
-    padding-left: 20px;
-    list-style-type: disc;
-}
-.account-info li {
-    font-size: 12px;
-    color: #64748b;
+    font-size: 14px;
+    font-weight: 700;
     margin-bottom: 4px;
 }
-.account-info .highlight {
-    color: #1e293b;
-    font-weight: 500;
+.credentials-alert span {
+    font-size: 13px;
+    opacity: 0.95;
+}
+.view-credentials-btn {
+    background: white;
+    color: #667eea;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.view-credentials-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* Credentials Modal */

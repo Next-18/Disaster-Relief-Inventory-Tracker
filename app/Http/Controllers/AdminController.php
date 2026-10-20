@@ -108,12 +108,17 @@ class AdminController extends Controller
             'status' => ['required', 'in:Active,Inactive'],
         ];
 
-        // Password is required when creating a new beneficiary (to create user account)
-        if (!$id) {
-            $rules['password'] = ['required', 'string', 'min:8', 'confirmed'];
-        }
-
         return $rules;
+    }
+
+    private function generateTemporaryPassword()
+    {
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        $password = '';
+        for ($i = 0; $i < 6; $i++) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+        return $password;
     }
 
     public function storeBeneficiary(Request $request)
@@ -134,33 +139,57 @@ class AdminController extends Controller
             }
         }
 
-        $data['beneficiary_no'] = 'BEN-' . str_pad((string) ((Beneficiary::max('id') ?? 0) + 1001), 4, '0', STR_PAD_LEFT);
+        // Generate unique beneficiary number
+        $beneficiaryNo = null;
+        $maxAttempts = 100;
+        $attempts = 0;
+
+        do {
+            $beneficiaryNo = 'BEN-' . str_pad((string) ((Beneficiary::max('id') ?? 0) + 1001 + $attempts), 4, '0', STR_PAD_LEFT);
+            $attempts++;
+
+            // Check if beneficiary number exists in beneficiaries table
+            $existsInBeneficiaries = Beneficiary::where('beneficiary_no', $beneficiaryNo)->exists();
+            // Check if beneficiary number exists in users table (as email)
+            $existsInUsers = User::where('email', $beneficiaryNo)->exists();
+
+            if (!$existsInBeneficiaries && !$existsInUsers) {
+                break;
+            }
+        } while ($attempts < $maxAttempts);
+
+        if ($attempts >= $maxAttempts) {
+            return back()->withInput()->withErrors(['beneficiary_no' => 'Could not generate a unique beneficiary number. Please try again.']);
+        }
+
+        $data['beneficiary_no'] = $beneficiaryNo;
         $beneficiary = Beneficiary::create($data);
 
-        // Always create user account when adding a new beneficiary
-        $password = $request->input('password');
+        // Auto-generate temporary password and create user account
+        $tempPassword = $this->generateTemporaryPassword();
 
         User::create([
             'name' => $beneficiary->full_name,
-            'email' => $beneficiary->beneficiary_no, // Use beneficiary number as username
-            'password' => bcrypt($password),
+            'email' => $beneficiary->beneficiary_no,
+            'password' => $tempPassword,
             'beneficiary_id' => $beneficiary->id,
             'role' => 'user',
+            'password_changed' => false,
         ]);
 
         $credentials = [
             'username' => $beneficiary->beneficiary_no,
-            'password' => $password,
+            'password' => $tempPassword,
             'beneficiary_name' => $beneficiary->full_name,
         ];
 
         $this->logAudit('create', 'users', "Created user account for beneficiary: {$beneficiary->full_name}");
         $this->logAudit('create', 'beneficiaries', "Created beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
-        
+
         if ($credentials) {
             session()->flash('user_credentials', $credentials);
         }
-        
+
         return redirect()->back()->with('success', 'Beneficiary added successfully.');
     }
 
