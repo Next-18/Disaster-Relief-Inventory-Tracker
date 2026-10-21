@@ -20,6 +20,8 @@ const starting = ref(false);
 const cameraError = ref('');
 const manualCode = ref('');
 const imageInput = ref(null);
+const cameraControls = ref({ zoom: null, torch: false, torchSupported: false });
+let cameraCapabilities = null;
 let scanner = null;
 let lastDecoded = '';
 let lastDecodedAt = 0;
@@ -71,6 +73,7 @@ async function startCamera(activeScanner) {
                 handleDecoded,
                 () => {},
             );
+            loadCameraControls(activeScanner);
             return;
         } catch {
             // constraint set not satisfiable — try the next one
@@ -84,12 +87,56 @@ async function startCamera(activeScanner) {
     for (const camera of ordered) {
         try {
             await activeScanner.start(camera.id, SCAN_CONFIG, handleDecoded, () => {});
+            loadCameraControls(activeScanner);
             return;
         } catch {
             // try the next camera
         }
     }
     throw new Error('No usable camera found.');
+}
+
+function loadCameraControls(activeScanner) {
+    cameraCapabilities = null;
+    cameraControls.value = { zoom: null, torch: false, torchSupported: false };
+    try {
+        const capabilities = activeScanner.getRunningTrackCameraCapabilities();
+        const zoom = capabilities.zoomFeature();
+        const controls = { zoom: null, torch: false, torchSupported: false };
+        if (zoom.isSupported()) {
+            controls.zoom = {
+                min: zoom.min(),
+                max: zoom.max(),
+                step: zoom.step() || 0.1,
+                value: zoom.value() ?? zoom.min(),
+            };
+        }
+        const torch = capabilities.torchFeature();
+        controls.torchSupported = torch.isSupported();
+        controls.torch = torch.value() === true;
+        cameraCapabilities = capabilities;
+        cameraControls.value = controls;
+    } catch {
+        // capabilities unavailable — controls stay hidden
+    }
+}
+
+async function applyZoom() {
+    try {
+        await cameraCapabilities?.zoomFeature().apply(Number(cameraControls.value.zoom.value));
+    } catch {
+        // camera rejected the zoom value
+    }
+}
+
+async function toggleTorch() {
+    const next = !cameraControls.value.torch;
+    try {
+        await cameraCapabilities?.torchFeature().apply(next);
+        cameraControls.value.torch = next;
+    } catch {
+        // torch not actually usable on this camera
+    }
 }
 
 function retryCamera() {
@@ -143,6 +190,8 @@ async function stopScanner() {
     } catch {
         // already stopped
     }
+    cameraCapabilities = null;
+    cameraControls.value = { zoom: null, torch: false, torchSupported: false };
 }
 
 function close() {
@@ -179,6 +228,13 @@ defineExpose({ open, close });
         </div>
         <div class="qr-scanner-body">
             <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" />
+            <div v-if="cameraControls.zoom || cameraControls.torchSupported" class="qr-scanner-controls">
+                <label v-if="cameraControls.zoom" class="qr-scanner-zoom">
+                    <span>Zoom</span>
+                    <input v-model="cameraControls.zoom.value" type="range" :min="cameraControls.zoom.min" :max="cameraControls.zoom.max" :step="cameraControls.zoom.step" @input="applyZoom">
+                </label>
+                <button v-if="cameraControls.torchSupported" type="button" class="qr-scanner-link" @click="toggleTorch">{{ cameraControls.torch ? 'Flashlight: on' : 'Flashlight: off' }}</button>
+            </div>
             <p v-if="cameraError" class="field-error qr-scanner-error">{{ cameraError }}</p>
             <p v-else-if="error" class="field-error qr-scanner-error">{{ error }}</p>
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
