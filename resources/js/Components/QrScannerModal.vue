@@ -22,12 +22,12 @@ const manualCode = ref('');
 const imageInput = ref(null);
 const cameraControls = ref({ zoom: null, torch: false, torchSupported: false });
 const detected = ref(false);
+const cameraActive = ref(false);
 let cameraCapabilities = null;
 let scanner = null;
 let detectFlashTimer = null;
 let audioContext = null;
-let lastDecoded = '';
-let lastDecodedAt = 0;
+let processedCodes = new Set();
 
 // No qrbox: the decoder scans the whole camera frame, so the QR pass
 // only has to be somewhere in view — no aligning into a target box.
@@ -46,8 +46,7 @@ const VIDEO_CONSTRAINT_ATTEMPTS = [
 async function open() {
     cameraError.value = '';
     manualCode.value = '';
-    lastDecoded = '';
-    lastDecodedAt = 0;
+    processedCodes = new Set();
     modal.value?.showModal();
     await nextTick();
     await startScanner();
@@ -122,6 +121,7 @@ function loadCameraControls(activeScanner) {
     } catch {
         // capabilities unavailable — controls stay hidden
     }
+    cameraActive.value = true;
 }
 
 async function applyZoom() {
@@ -147,13 +147,14 @@ function retryCamera() {
     startScanner();
 }
 
+// Each distinct QR is emitted at most once per modal open, so a code
+// held in frame can't fire repeated lookups while one is being handled.
 function handleDecoded(text) {
-    const now = Date.now();
-    if (text === lastDecoded && now - lastDecodedAt < 2500) return;
-    lastDecoded = text;
-    lastDecodedAt = now;
+    const code = String(text ?? '').trim();
+    if (!code || processedCodes.has(code)) return;
+    processedCodes.add(code);
     flashDetected();
-    emit('decoded', text);
+    emit('decoded', code);
 }
 
 function flashDetected() {
@@ -217,6 +218,7 @@ async function stopScanner() {
     cameraCapabilities = null;
     cameraControls.value = { zoom: null, torch: false, torchSupported: false };
     detected.value = false;
+    cameraActive.value = false;
 }
 
 function close() {
@@ -263,6 +265,8 @@ defineExpose({ open, close });
             <p v-if="cameraError" class="field-error qr-scanner-error">{{ cameraError }}</p>
             <p v-else-if="error" class="field-error qr-scanner-error">{{ error }}</p>
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
+            <p v-else-if="detected" class="qr-scanner-hint qr-scanner-success">QR detected — opening record…</p>
+            <p v-else-if="cameraActive" class="qr-scanner-hint">Scanning… hold the QR anywhere in view — it reads automatically.</p>
             <p v-else class="qr-scanner-hint">Just hold the QR anywhere in view — it reads automatically. Raise the screen brightness if it won't pick up.</p>
             <button v-if="cameraError || error" type="button" class="qr-scanner-link" @click="retryCamera">Restart camera</button>
 
