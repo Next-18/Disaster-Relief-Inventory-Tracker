@@ -30,7 +30,10 @@ const SCAN_CONFIG = { fps: 15 };
 // html5-qrcode only allows a single facingMode/deviceId key in the first
 // argument — extra constraints (resolution etc.) must go via videoConstraints.
 const VIDEO_CONSTRAINT_ATTEMPTS = [
-    { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    // focusMode keeps the pass sharp wherever it's held; browsers that
+    // don't support it ignore the preference.
+    { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, focusMode: 'continuous', exposureMode: 'continuous' },
+    { facingMode: 'environment', focusMode: 'continuous' },
     { facingMode: 'environment' },
     { facingMode: 'user' },
 ];
@@ -179,7 +182,7 @@ defineExpose({ open, close });
             <p v-if="cameraError" class="field-error qr-scanner-error">{{ cameraError }}</p>
             <p v-else-if="error" class="field-error qr-scanner-error">{{ error }}</p>
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
-            <p v-else class="qr-scanner-hint">Hold the QR anywhere in the camera view — it detects automatically, no need to align it. Raise the screen brightness if it won't read.</p>
+            <p v-else class="qr-scanner-hint">Just hold the QR anywhere in view — it reads automatically. Raise the screen brightness if it won't pick up.</p>
             <button v-if="cameraError || error" type="button" class="qr-scanner-link" @click="retryCamera">Restart camera</button>
 
             <div class="qr-scanner-divider"><span>or type the number</span></div>
