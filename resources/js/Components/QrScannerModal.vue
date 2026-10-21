@@ -12,7 +12,6 @@ const SCANNER_ELEMENT_ID = 'qr-scanner-region';
 const SCANNER_OPTIONS = {
     formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
     verbose: false,
-    rememberLastUsedCamera: true,
     useBarCodeDetectorIfSupported: true,
 };
 const modal = ref(null);
@@ -23,6 +22,9 @@ const imageInput = ref(null);
 const cameraControls = ref({ zoom: null, torch: false, torchSupported: false });
 const detected = ref(false);
 const cameraActive = ref(false);
+const mirrored = ref(false);
+const cameraList = ref([]);
+let cameraIndex = 0;
 let cameraCapabilities = null;
 let scanner = null;
 let detectFlashTimer = null;
@@ -58,6 +60,7 @@ async function startScanner() {
     try {
         scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, SCANNER_OPTIONS);
         await startCamera(scanner);
+        loadCameraList();
     } catch (error) {
         cameraError.value = friendlyCameraError(error);
         await stopScanner();
@@ -76,6 +79,7 @@ async function startCamera(activeScanner) {
                 () => {},
             );
             loadCameraControls(activeScanner);
+            applyOrientation(activeScanner);
             return;
         } catch {
             // constraint set not satisfiable — try the next one
@@ -86,10 +90,13 @@ async function startCamera(activeScanner) {
     const ordered = [...(cameras ?? [])].sort(
         (a, b) => Number(/back|rear|environment/i.test(b.label ?? '')) - Number(/back|rear|environment/i.test(a.label ?? '')),
     );
-    for (const camera of ordered) {
+    for (const [index, camera] of ordered.entries()) {
         try {
             await activeScanner.start(camera.id, SCAN_CONFIG, handleDecoded, () => {});
             loadCameraControls(activeScanner);
+            applyOrientation(activeScanner);
+            cameraIndex = index;
+            cameraList.value = ordered;
             return;
         } catch {
             // try the next camera
@@ -122,6 +129,53 @@ function loadCameraControls(activeScanner) {
         // capabilities unavailable — controls stay hidden
     }
     cameraActive.value = true;
+}
+
+// Front-facing ("user") cameras stream a mirrored preview; flip the
+// display so the QR looks natural. Decoding is unaffected.
+function applyOrientation(activeScanner) {
+    try {
+        mirrored.value = activeScanner.getRunningTrackSettings()?.facingMode === 'user';
+    } catch {
+        mirrored.value = false;
+    }
+}
+
+async function loadCameraList() {
+    if (cameraList.value.length) return;
+    try {
+        const cameras = await Html5Qrcode.getCameras();
+        cameraList.value = [...(cameras ?? [])].sort(
+            (a, b) => Number(/back|rear|environment/i.test(b.label ?? '')) - Number(/back|rear|environment/i.test(a.label ?? '')),
+        );
+    } catch {
+        cameraList.value = [];
+    }
+}
+
+async function switchCamera() {
+    const list = cameraList.value;
+    if (!scanner || list.length < 2) return;
+    cameraError.value = '';
+    cameraIndex = (cameraIndex + 1) % list.length;
+    const next = list[cameraIndex];
+    const active = scanner;
+    scanner = null;
+    try {
+        if (active.isScanning) await active.stop();
+        active.clear();
+    } catch {
+        // already stopped
+    }
+    try {
+        scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, SCANNER_OPTIONS);
+        await scanner.start(next.id, SCAN_CONFIG, handleDecoded, () => {});
+        loadCameraControls(scanner);
+        applyOrientation(scanner);
+    } catch (error) {
+        cameraError.value = friendlyCameraError(error);
+        await stopScanner();
+    }
 }
 
 async function applyZoom() {
@@ -219,6 +273,7 @@ async function stopScanner() {
     cameraControls.value = { zoom: null, torch: false, torchSupported: false };
     detected.value = false;
     cameraActive.value = false;
+    mirrored.value = false;
 }
 
 function close() {
@@ -254,13 +309,14 @@ defineExpose({ open, close });
             <button type="button" class="modal-close" aria-label="Close" @click="close">×</button>
         </div>
         <div class="qr-scanner-body">
-            <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" :class="{ detected }" />
-            <div v-if="cameraControls.zoom || cameraControls.torchSupported" class="qr-scanner-controls">
+            <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" :class="{ detected, mirrored }" />
+            <div v-if="cameraControls.zoom || cameraControls.torchSupported || cameraList.length > 1" class="qr-scanner-controls">
                 <label v-if="cameraControls.zoom" class="qr-scanner-zoom">
                     <span>Zoom</span>
                     <input v-model="cameraControls.zoom.value" type="range" :min="cameraControls.zoom.min" :max="cameraControls.zoom.max" :step="cameraControls.zoom.step" @input="applyZoom">
                 </label>
                 <button v-if="cameraControls.torchSupported" type="button" class="qr-scanner-link" @click="toggleTorch">{{ cameraControls.torch ? 'Flashlight: on' : 'Flashlight: off' }}</button>
+                <button v-if="cameraList.length > 1" type="button" class="qr-scanner-link" @click="switchCamera">Switch camera</button>
             </div>
             <p v-if="cameraError" class="field-error qr-scanner-error">{{ cameraError }}</p>
             <p v-else-if="error" class="field-error qr-scanner-error">{{ error }}</p>
