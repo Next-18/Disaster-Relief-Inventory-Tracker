@@ -780,7 +780,14 @@ td { padding: 14px 23px; border-top: 1px solid #edf2f7; color: #52647e; font-siz
 .beneficiary-scan-row { display: flex; align-items: center; gap: 8px; }
 .beneficiary-scan-row select { flex: 1; }
 .qr-scanner-body { display: grid; gap: 10px; padding: 16px 21px 20px; }
-.qr-scanner-region { width: 100%; min-height: 260px; overflow: hidden; border: 1px solid var(--admin-line); border-radius: 10px; background: #0f172a; }
+.qr-scanner-region { width: 100%; min-height: 300px; overflow: hidden; border: 1px solid var(--admin-line); border-radius: 10px; background: #0f172a; }
 .qr-scanner-region video { width: 100% !important; }
 .qr-scanner-hint { margin: 0; color: var(--admin-muted); font-size: 12px; text-align: center; }
 .qr-scanner-error { margin: 0; text-align: center; }
+.qr-scanner-divider { display: flex; align-items: center; gap: 10px; margin-top: 4px; color: var(--admin-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.qr-scanner-divider::before, .qr-scanner-divider::after { content: ''; flex: 1; border-top: 1px solid var(--admin-line); }
+.form-modal .qr-scanner-manual { display: flex; gap: 8px; padding: 0; }
+.qr-scanner-manual input { flex: 1; min-width: 0; }
+.qr-scanner-manual .action-btn { flex: 0 0 auto; min-height: 36px; }
+.qr-scanner-link { justify-self: center; border: 0; padding: 2px 4px; background: transparent; color: var(--admin-blue); font-size: 12px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qr-scanner-link:hover { color: var(--admin-navy); }
