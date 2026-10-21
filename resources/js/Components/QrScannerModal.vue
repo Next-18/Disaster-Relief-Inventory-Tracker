@@ -78,10 +78,13 @@ function onDialogClose() {
 
 function friendlyCameraError(error) {
     if (!window.isSecureContext) return 'The camera needs a secure connection (HTTPS or localhost).';
-    const name = error?.name ?? '';
-    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') return 'Camera access was blocked. Allow camera permission for this site, then try again.';
-    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'No camera was found on this device.';
-    if (name === 'NotReadableError' || name === 'TrackStartError') return 'The camera is already in use by another application.';
+    // html5-qrcode rejects start() with a plain string like
+    // "Error getting userMedia, error = NotAllowedError: Permission denied",
+    // so match on the rendered text as well as DOMException names.
+    const label = String(error?.name ?? error?.message ?? error ?? '');
+    if (/NotAllowedError|PermissionDeniedError|Permission denied/i.test(label)) return 'Camera access was blocked. Allow camera permission for this site, then try again.';
+    if (/NotFoundError|DevicesNotFoundError|No video input devices|Requested device not found/i.test(label)) return 'No camera was found on this device.';
+    if (/NotReadableError|TrackStartError|Could not start video source|already in use/i.test(label)) return 'The camera is already in use by another application.';
     return 'The camera could not be started. Please try again.';
 }
 
