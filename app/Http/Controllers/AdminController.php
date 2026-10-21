@@ -565,6 +565,7 @@ class AdminController extends Controller
         ]);
         $data['distributed_by'] = auth()->id();
         $distribution = Distribution::create($data);
+        $this->markPackageReceived($distribution);
         
         $beneficiary = Beneficiary::find($data['beneficiary_id']);
         $package = ReliefPackage::find($data['package_id']);
@@ -584,6 +585,8 @@ class AdminController extends Controller
     public function updateDistribution(Request $request, $id)
     {
         $distribution = Distribution::findOrFail($id);
+        $wasReceived = $distribution->status === 'Released';
+        $oldPackageId = $distribution->package_id;
         $data = $request->validate([
             'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
             'package_id' => ['required', 'exists:relief_packages,id'],
@@ -592,6 +595,10 @@ class AdminController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
         $distribution->update($data);
+        $this->markPackageReceived($distribution);
+        if ($wasReceived && ($distribution->status !== 'Released' || $oldPackageId !== $distribution->package_id)) {
+            $this->restorePackageAvailability($oldPackageId);
+        }
         $this->logAudit('update', 'distribution', "Updated distribution record ID: {$id}");
         return redirect()->route('admin.distribution')->with('success', 'Distribution updated successfully.');
     }
@@ -599,9 +606,33 @@ class AdminController extends Controller
     public function deleteDistribution($id)
     {
         $distribution = Distribution::findOrFail($id);
+        $wasReceived = $distribution->status === 'Released';
+        $packageId = $distribution->package_id;
         $distribution->delete();
+        if ($wasReceived) {
+            $this->restorePackageAvailability($packageId);
+        }
         $this->logAudit('delete', 'distribution', "Deleted distribution record ID: {$id}");
         return redirect()->route('admin.distribution')->with('success', 'Distribution deleted successfully.');
+    }
+
+    // A "Released" distribution means the beneficiary received the package,
+    // so it leaves the available list; moving back to Pending (or deleting the
+    // record) restores availability only when no other released record uses it.
+    protected function markPackageReceived(Distribution $distribution)
+    {
+        if ($distribution->status === 'Released' && $distribution->package_id) {
+            ReliefPackage::where('id', $distribution->package_id)->update(['status' => 'Not Available']);
+        }
+    }
+
+    protected function restorePackageAvailability($packageId)
+    {
+        if (!$packageId) return;
+        $stillReleased = Distribution::where('package_id', $packageId)->where('status', 'Released')->exists();
+        if (!$stillReleased) {
+            ReliefPackage::where('id', $packageId)->update(['status' => 'Available']);
+        }
     }
 
     public function qrCodes(Request $request)

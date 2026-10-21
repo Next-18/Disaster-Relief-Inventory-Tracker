@@ -26,6 +26,16 @@ const scanError = ref('');
 const editingId = ref(null);
 const form = useForm({ beneficiary_id: '', package_id: '', date_released: '', status: 'Released', notes: '' });
 const rows = computed(() => props.distributions.data ?? []);
+// Received packages are hidden from the available list, but an edit form
+// must still show the package already assigned to that record.
+const packageOptions = computed(() => {
+    const options = [...props.packages];
+    const assigned = rows.value.find((d) => d.id === editingId.value)?.relief_package;
+    if (form.package_id && !options.some((item) => item.id === form.package_id)) {
+        options.push({ id: form.package_id, package_name: `${assigned?.package_name ?? 'Assigned package'} (not available)` });
+    }
+    return options;
+});
 let searchTimer;
 let lastSubmittedSearch = searchTerm.value.trim();
 
@@ -155,7 +165,7 @@ function formatDate(value) {
         <div class="modal-title"><div><h3>{{ editingId ? 'Edit Distribution' : 'Record Distribution' }}</h3><p>{{ editingId ? 'Update distribution information.' : 'Record a relief package distribution to a beneficiary.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="modal?.close()">×</button></div>
         <form @submit.prevent="saveDistribution">
             <label>Beneficiary<div class="beneficiary-scan-row"><select v-model="form.beneficiary_id" required><option value="">Select beneficiary</option><option v-for="beneficiary in beneficiaries" :key="beneficiary.id" :value="beneficiary.id">{{ beneficiary.full_name }} ({{ beneficiary.beneficiary_no }})</option></select><button type="button" class="action-btn" @click="openScanner">Scan QR</button></div><small v-if="form.errors.beneficiary_id" class="field-error">{{ form.errors.beneficiary_id }}</small></label>
-            <label>Relief Package<select v-model="form.package_id" required><option value="">Select package</option><option v-for="item in packages" :key="item.id" :value="item.id">{{ item.package_name }}</option></select><small v-if="form.errors.package_id" class="field-error">{{ form.errors.package_id }}</small></label>
+            <label>Relief Package<select v-model="form.package_id" required><option value="">Select package</option><option v-for="item in packageOptions" :key="item.id" :value="item.id">{{ item.package_name }}</option></select><small v-if="form.errors.package_id" class="field-error">{{ form.errors.package_id }}</small></label>
             <label>Date Released<input v-model="form.date_released" type="date" required><small v-if="form.errors.date_released" class="field-error">{{ form.errors.date_released }}</small></label>
             <label>Status<select v-model="form.status" required><option>Released</option><option>Pending</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
             <label>Notes<textarea v-model="form.notes" rows="3"/><small v-if="form.errors.notes" class="field-error">{{ form.errors.notes }}</small></label>
