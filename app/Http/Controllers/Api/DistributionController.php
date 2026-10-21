@@ -63,6 +63,12 @@ class DistributionController extends Controller
         $distribution = Distribution::create($data);
         $distribution->load(['beneficiary', 'reliefPackage']);
 
+        // A released distribution means the package was received — drop it
+        // from the available packages list.
+        if ($distribution->status === 'Released' && $distribution->reliefPackage) {
+            $distribution->reliefPackage->update(['status' => 'Not Available']);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Distribution recorded successfully',
