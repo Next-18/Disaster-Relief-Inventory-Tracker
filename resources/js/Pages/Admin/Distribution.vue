@@ -3,6 +3,7 @@ import { router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AdminModal from '../../Components/AdminModal.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
+import QrScannerModal from '../../Components/QrScannerModal.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
 
 defineOptions({ layout: AdminLayout });
@@ -19,6 +20,9 @@ const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
 const searchTerm = ref(props.search);
 const modal = ref(null);
+const recordModalOpen = ref(false);
+const scannerModal = ref(null);
+const scanError = ref('');
 const editingId = ref(null);
 const form = useForm({ beneficiary_id: '', package_id: '', date_released: '', status: 'Released', notes: '' });
 const rows = computed(() => props.distributions.data ?? []);
@@ -51,16 +55,19 @@ function searchDistributions(replace = false) {
     router.get(routes.value.distribution, { search: lastSubmittedSearch || undefined }, { preserveState: true, preserveScroll: true, replace });
 }
 
-function openAddModal() {
+function openAddModal(beneficiaryId = '') {
     editingId.value = null;
     form.reset();
     form.clearErrors();
     form.date_released = props.today;
     form.status = 'Released';
+    if (beneficiaryId) form.beneficiary_id = beneficiaryId;
+    recordModalOpen.value = true;
     modal.value?.showModal();
 }
 
 function openEditModal(distribution) {
+    recordModalOpen.value = true;
     editingId.value = distribution.id;
     form.clearErrors();
     form.beneficiary_id = distribution.beneficiary_id;
@@ -69,6 +76,26 @@ function openEditModal(distribution) {
     form.status = distribution.status;
     form.notes = distribution.notes ?? '';
     modal.value?.showModal();
+}
+
+function openScanner() {
+    scanError.value = '';
+    scannerModal.value?.open();
+}
+
+function handleScannedCode(text) {
+    const code = (text ?? '').trim();
+    const match = props.beneficiaries.find(
+        (beneficiary) => String(beneficiary.beneficiary_no).trim().toUpperCase() === code.toUpperCase(),
+    );
+    if (!match) {
+        scanError.value = `No active beneficiary found for "${code}".`;
+        return;
+    }
+    scanError.value = '';
+    scannerModal.value?.close();
+    if (recordModalOpen.value) form.beneficiary_id = match.id;
+    else openAddModal(match.id);
 }
 
 function saveDistribution() {
@@ -90,7 +117,10 @@ function formatDate(value) {
 <template>
     <section class="module-heading">
         <div><h2>Distribution records</h2><p>Record and monitor relief package distributions.</p></div>
-        <button class="add-button" type="button" @click="openAddModal"><span>+</span> Record Distribution</button>
+        <div class="module-heading-actions">
+            <button class="add-button" type="button" @click="openScanner">Scan QR</button>
+            <button class="add-button" type="button" @click="openAddModal()"><span>+</span> Record Distribution</button>
+        </div>
     </section>
 
     <section class="panel record-panel">
@@ -119,10 +149,12 @@ function formatDate(value) {
         <InertiaPagination :links="distributions.links" :show="distributions.last_page > 1" />
     </section>
 
-    <AdminModal ref="modal" class="form-modal" @click.self="modal?.close()">
+    <QrScannerModal ref="scannerModal" :error="scanError" @decoded="handleScannedCode" />
+
+    <AdminModal ref="modal" class="form-modal" @click.self="modal?.close()" @close="recordModalOpen = false">
         <div class="modal-title"><div><h3>{{ editingId ? 'Edit Distribution' : 'Record Distribution' }}</h3><p>{{ editingId ? 'Update distribution information.' : 'Record a relief package distribution to a beneficiary.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="modal?.close()">×</button></div>
         <form @submit.prevent="saveDistribution">
-            <label>Beneficiary<select v-model="form.beneficiary_id" required><option value="">Select beneficiary</option><option v-for="beneficiary in beneficiaries" :key="beneficiary.id" :value="beneficiary.id">{{ beneficiary.full_name }} ({{ beneficiary.beneficiary_no }})</option></select><small v-if="form.errors.beneficiary_id" class="field-error">{{ form.errors.beneficiary_id }}</small></label>
+            <label>Beneficiary<div class="beneficiary-scan-row"><select v-model="form.beneficiary_id" required><option value="">Select beneficiary</option><option v-for="beneficiary in beneficiaries" :key="beneficiary.id" :value="beneficiary.id">{{ beneficiary.full_name }} ({{ beneficiary.beneficiary_no }})</option></select><button type="button" class="action-btn" @click="openScanner">Scan QR</button></div><small v-if="form.errors.beneficiary_id" class="field-error">{{ form.errors.beneficiary_id }}</small></label>
             <label>Relief Package<select v-model="form.package_id" required><option value="">Select package</option><option v-for="item in packages" :key="item.id" :value="item.id">{{ item.package_name }}</option></select><small v-if="form.errors.package_id" class="field-error">{{ form.errors.package_id }}</small></label>
             <label>Date Released<input v-model="form.date_released" type="date" required><small v-if="form.errors.date_released" class="field-error">{{ form.errors.date_released }}</small></label>
             <label>Status<select v-model="form.status" required><option>Released</option><option>Pending</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
