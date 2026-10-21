@@ -1,5 +1,6 @@
 <script setup>
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import * as ZXing from 'html5-qrcode/third_party/zxing-js.umd.js';
 import { nextTick, onBeforeUnmount, ref } from 'vue';
 import AdminModal from './AdminModal.vue';
 
@@ -19,17 +20,24 @@ const starting = ref(false);
 const cameraError = ref('');
 const manualCode = ref('');
 const imageInput = ref(null);
-const cameraControls = ref({ zoom: null, torch: false, torchSupported: false });
+const cameraControls = ref({ zoom: null, torch: false, torchSupported: false, exposure: null });
 const detected = ref(false);
 const cameraActive = ref(false);
+const lowLight = ref(false);
 const mirrored = ref(false);
 const cameraList = ref([]);
 let cameraIndex = 0;
 let cameraCapabilities = null;
+let cameraTrack = null;
 let scanner = null;
 let detectFlashTimer = null;
 let audioContext = null;
 let processedCodes = new Set();
+let enhanceTimer = null;
+let enhanceCanvas = null;
+let zxingReader = null;
+let darkFrames = 0;
+let lightingTouchedByUser = false;
 
 // No qrbox: the decoder scans the whole camera frame, so the QR pass
 // only has to be somewhere in view — no aligning into a target box.
@@ -39,7 +47,7 @@ const SCAN_CONFIG = { fps: 15 };
 const VIDEO_CONSTRAINT_ATTEMPTS = [
     // focusMode keeps the pass sharp wherever it's held; browsers that
     // don't support it ignore the preference.
-    { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, focusMode: 'continuous', exposureMode: 'continuous' },
+    { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, focusMode: 'continuous', exposureMode: 'continuous', whiteBalanceMode: 'continuous' },
     { facingMode: 'environment', focusMode: 'continuous' },
     { facingMode: 'environment' },
     { facingMode: 'user' },
@@ -107,11 +115,12 @@ async function startCamera(activeScanner) {
 
 function loadCameraControls(activeScanner) {
     cameraCapabilities = null;
-    cameraControls.value = { zoom: null, torch: false, torchSupported: false };
+    cameraTrack = null;
+    cameraControls.value = { zoom: null, torch: false, torchSupported: false, exposure: null };
     try {
         const capabilities = activeScanner.getRunningTrackCameraCapabilities();
         const zoom = capabilities.zoomFeature();
-        const controls = { zoom: null, torch: false, torchSupported: false };
+        const controls = { zoom: null, torch: false, torchSupported: false, exposure: null };
         if (zoom.isSupported()) {
             controls.zoom = {
                 min: zoom.min(),
@@ -128,7 +137,30 @@ function loadCameraControls(activeScanner) {
     } catch {
         // capabilities unavailable — controls stay hidden
     }
+    // html5-qrcode only wraps zoom/torch; exposure compensation needs the raw
+    // MediaStreamTrack off the video element the library created.
+    try {
+        const track = getVideoTrack();
+        const caps = track?.getCapabilities?.() ?? {};
+        if (track && caps.exposureCompensation) {
+            cameraControls.value.exposure = {
+                min: caps.exposureCompensation.min,
+                max: caps.exposureCompensation.max,
+                step: caps.exposureCompensation.step || 0.1,
+                value: track.getSettings?.().exposureCompensation ?? 0,
+            };
+            cameraTrack = track;
+        }
+    } catch {
+        // exposure control unsupported
+    }
     cameraActive.value = true;
+    startEnhanceLoop();
+}
+
+function getVideoTrack() {
+    const video = document.querySelector(`#${SCANNER_ELEMENT_ID} video`);
+    return video?.srcObject?.getVideoTracks?.()[0] ?? null;
 }
 
 // Front-facing ("user") cameras stream a mirrored preview; flip the
@@ -186,14 +218,138 @@ async function applyZoom() {
     }
 }
 
+async function applyExposure() {
+    lightingTouchedByUser = true;
+    try {
+        await cameraTrack?.applyConstraints({
+            advanced: [{ exposureCompensation: Number(cameraControls.value.exposure.value) }],
+        });
+    } catch {
+        // camera rejected the exposure value
+    }
+}
+
 async function toggleTorch() {
     const next = !cameraControls.value.torch;
+    lightingTouchedByUser = true;
     try {
         await cameraCapabilities?.torchFeature().apply(next);
         cameraControls.value.torch = next;
     } catch {
         // torch not actually usable on this camera
     }
+}
+
+// --- Lighting adaptation + enhanced decode -------------------------------
+// The library decodes raw frames only. This loop periodically samples a
+// downscaled frame, measures its brightness, and:
+//  - auto-turns the torch on in dark rooms (like a real barcode scanner)
+//  - bumps exposure compensation when no torch exists
+//  - retries ZXing on contrast-stretched and inverted copies of the frame,
+//    which rescues dim, backlit, and low-contrast codes the raw pass misses.
+function startEnhanceLoop() {
+    stopEnhanceLoop();
+    darkFrames = 0;
+    lightingTouchedByUser = false;
+    lowLight.value = false;
+    enhanceTimer = setInterval(sampleFrame, 800);
+}
+
+function stopEnhanceLoop() {
+    clearInterval(enhanceTimer);
+    enhanceTimer = null;
+    darkFrames = 0;
+    lowLight.value = false;
+}
+
+function sampleFrame() {
+    const video = document.querySelector(`#${SCANNER_ELEMENT_ID} video`);
+    if (!video?.videoWidth || video.readyState < 2) return;
+    enhanceCanvas ??= document.createElement('canvas');
+    const scale = Math.min(1, 640 / video.videoWidth);
+    const w = Math.round(video.videoWidth * scale);
+    const h = Math.round(video.videoHeight * scale);
+    enhanceCanvas.width = w;
+    enhanceCanvas.height = h;
+    const ctx = enhanceCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, w, h);
+    let imageData;
+    try {
+        imageData = ctx.getImageData(0, 0, w, h);
+    } catch {
+        return; // frame not readable (e.g. tainted)
+    }
+    const px = imageData.data;
+    const hist = new Uint32Array(256);
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4) {
+        const l = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 | 0;
+        hist[l]++;
+        sum += l;
+    }
+    adaptLighting(sum / (w * h));
+    if (detected.value) return;
+    // Retry decode on enhanced copies: contrast-stretched, then inverted
+    // (covers white-on-dark codes the normal binarizer misses).
+    for (const enhance of [contrastStretch, null]) {
+        try {
+            if (enhance) enhance(imageData, hist);
+            ctx.putImageData(imageData, 0, 0);
+            const text = zxingDecode(enhanceCanvas, enhance === null);
+            if (text) { handleDecoded(text); return; }
+        } catch {
+            // this variant didn't decode — try the next
+        }
+    }
+}
+
+function adaptLighting(mean) {
+    const dark = mean < 55;
+    darkFrames = dark ? darkFrames + 1 : 0;
+    lowLight.value = dark;
+    if (!dark || darkFrames < 3 || lightingTouchedByUser) return;
+    if (cameraControls.value.torchSupported && !cameraControls.value.torch) {
+        cameraControls.value.torch = true;
+        try {
+            cameraCapabilities?.torchFeature().apply(true);
+        } catch {
+            cameraControls.value.torch = false;
+        }
+    } else if (cameraControls.value.exposure && cameraControls.value.exposure.value <= 0) {
+        cameraControls.value.exposure.value = Math.round(
+            (cameraControls.value.exposure.max * 0.6) / cameraControls.value.exposure.step,
+        ) * cameraControls.value.exposure.step;
+        applyExposure();
+    }
+}
+
+function contrastStretch(imageData, hist) {
+    const total = imageData.width * imageData.height;
+    let lo = 0, hi = 255, acc = 0;
+    for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc > total * 0.02) { lo = i; break; } }
+    acc = 0;
+    for (let i = 255; i >= 0; i--) { acc += hist[i]; if (acc > total * 0.02) { hi = i; break; } }
+    const range = Math.max(hi - lo, 1);
+    const px = imageData.data;
+    for (let i = 0; i < px.length; i += 4) {
+        const l = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000;
+        const g = Math.max(0, Math.min(255, ((l - lo) * 255) / range));
+        px[i] = px[i + 1] = px[i + 2] = g;
+    }
+}
+
+function zxingDecode(canvas, inverted) {
+    if (!zxingReader) {
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        zxingReader = new ZXing.MultiFormatReader(false, hints);
+    }
+    const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    const bitmap = new ZXing.BinaryBitmap(
+        new ZXing.HybridBinarizer(inverted ? new ZXing.InvertedLuminanceSource(source) : source),
+    );
+    return zxingReader.decode(bitmap)?.text ?? null;
 }
 
 function retryCamera() {
@@ -269,8 +425,10 @@ async function stopScanner() {
     } catch {
         // already stopped
     }
+    stopEnhanceLoop();
     cameraCapabilities = null;
-    cameraControls.value = { zoom: null, torch: false, torchSupported: false };
+    cameraTrack = null;
+    cameraControls.value = { zoom: null, torch: false, torchSupported: false, exposure: null };
     detected.value = false;
     cameraActive.value = false;
     mirrored.value = false;
@@ -310,10 +468,14 @@ defineExpose({ open, close });
         </div>
         <div class="qr-scanner-body">
             <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" :class="{ detected, mirrored }" />
-            <div v-if="cameraControls.zoom || cameraControls.torchSupported || cameraList.length > 1" class="qr-scanner-controls">
+            <div v-if="cameraControls.zoom || cameraControls.torchSupported || cameraControls.exposure || cameraList.length > 1" class="qr-scanner-controls">
                 <label v-if="cameraControls.zoom" class="qr-scanner-zoom">
                     <span>Zoom</span>
                     <input v-model="cameraControls.zoom.value" type="range" :min="cameraControls.zoom.min" :max="cameraControls.zoom.max" :step="cameraControls.zoom.step" @input="applyZoom">
+                </label>
+                <label v-if="cameraControls.exposure" class="qr-scanner-zoom">
+                    <span>Brightness</span>
+                    <input v-model="cameraControls.exposure.value" type="range" :min="cameraControls.exposure.min" :max="cameraControls.exposure.max" :step="cameraControls.exposure.step" @input="applyExposure">
                 </label>
                 <button v-if="cameraControls.torchSupported" type="button" class="qr-scanner-link" @click="toggleTorch">{{ cameraControls.torch ? 'Flashlight: on' : 'Flashlight: off' }}</button>
                 <button v-if="cameraList.length > 1" type="button" class="qr-scanner-link" @click="switchCamera">Switch camera</button>
@@ -322,6 +484,7 @@ defineExpose({ open, close });
             <p v-else-if="error" class="field-error qr-scanner-error">{{ error }}</p>
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
             <p v-else-if="detected" class="qr-scanner-hint qr-scanner-success">QR detected — opening record…</p>
+            <p v-else-if="cameraActive && lowLight && !cameraControls.torch" class="qr-scanner-hint">Scene looks dark — raise the pass's brightness or move to better light.</p>
             <p v-else-if="cameraActive" class="qr-scanner-hint">Scanning… hold the QR anywhere in view — it reads automatically.</p>
             <p v-else class="qr-scanner-hint">Just hold the QR anywhere in view — it reads automatically. Raise the screen brightness if it won't pick up.</p>
             <button v-if="cameraError || error" type="button" class="qr-scanner-link" @click="retryCamera">Restart camera</button>
