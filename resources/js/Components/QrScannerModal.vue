@@ -21,8 +21,11 @@ const cameraError = ref('');
 const manualCode = ref('');
 const imageInput = ref(null);
 const cameraControls = ref({ zoom: null, torch: false, torchSupported: false });
+const detected = ref(false);
 let cameraCapabilities = null;
 let scanner = null;
+let detectFlashTimer = null;
+let audioContext = null;
 let lastDecoded = '';
 let lastDecodedAt = 0;
 
@@ -149,7 +152,28 @@ function handleDecoded(text) {
     if (text === lastDecoded && now - lastDecodedAt < 2500) return;
     lastDecoded = text;
     lastDecodedAt = now;
+    flashDetected();
     emit('decoded', text);
+}
+
+function flashDetected() {
+    detected.value = true;
+    clearTimeout(detectFlashTimer);
+    detectFlashTimer = setTimeout(() => { detected.value = false; }, 900);
+    try {
+        audioContext ??= new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        gain.gain.setValueAtTime(0.15, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.18);
+        oscillator.connect(gain).connect(audioContext.destination);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.18);
+    } catch {
+        // audio unavailable — flash still signals detection
+    }
 }
 
 function submitManualCode() {
@@ -192,6 +216,7 @@ async function stopScanner() {
     }
     cameraCapabilities = null;
     cameraControls.value = { zoom: null, torch: false, torchSupported: false };
+    detected.value = false;
 }
 
 function close() {
@@ -227,7 +252,7 @@ defineExpose({ open, close });
             <button type="button" class="modal-close" aria-label="Close" @click="close">×</button>
         </div>
         <div class="qr-scanner-body">
-            <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" />
+            <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" :class="{ detected }" />
             <div v-if="cameraControls.zoom || cameraControls.torchSupported" class="qr-scanner-controls">
                 <label v-if="cameraControls.zoom" class="qr-scanner-zoom">
                     <span>Zoom</span>

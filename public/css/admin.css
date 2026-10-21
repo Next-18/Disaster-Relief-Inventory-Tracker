@@ -779,9 +779,10 @@ td { padding: 14px 23px; border-top: 1px solid #edf2f7; color: #52647e; font-siz
 .module-heading-actions { display: flex; align-items: center; gap: 8px; }
 .beneficiary-scan-row { display: flex; align-items: center; gap: 8px; }
 .beneficiary-scan-row select { flex: 1; }
-.form-modal.qr-scanner-modal { width: min(720px, calc(100vw - 24px)); }
+.form-modal.qr-scanner-modal { width: min(480px, calc(100vw - 24px)); }
 .qr-scanner-body { display: grid; gap: 10px; padding: 16px 21px 20px; }
-.qr-scanner-region { width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--admin-line); border-radius: 10px; background: #0f172a; }
+.qr-scanner-region { width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--admin-line); border-radius: 10px; background: #0f172a; transition: border-color .15s, box-shadow .15s; }
+.qr-scanner-region.detected { border-color: #16a34a; box-shadow: 0 0 0 3px #16a34a55; }
 .qr-scanner-region video { width: 100% !important; height: 100% !important; object-fit: cover; }
 .qr-scanner-controls { display: flex; align-items: center; gap: 14px; }
 .qr-scanner-zoom { display: flex; align-items: center; gap: 8px; flex: 1; color: var(--admin-muted); font-size: 11px; font-weight: 700; }
