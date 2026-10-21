@@ -13,6 +13,7 @@ const SCANNER_OPTIONS = {
     formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
     verbose: false,
     rememberLastUsedCamera: true,
+    useBarCodeDetectorIfSupported: true,
 };
 const modal = ref(null);
 const starting = ref(false);
@@ -23,14 +24,9 @@ let scanner = null;
 let lastDecoded = '';
 let lastDecodedAt = 0;
 
-// Give the decoder a large window — a small fixed qrbox is what made
-// aligning the QR pass on a phone screen so fiddly.
-function qrboxSize(viewfinderWidth, viewfinderHeight) {
-    const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72);
-    return { width: Math.min(Math.max(size, 160), 420), height: Math.min(Math.max(size, 160), 420) };
-}
-
-const SCAN_CONFIG = { fps: 15, qrbox: qrboxSize };
+// No qrbox: the decoder scans the whole camera frame, so the QR pass
+// only has to be somewhere in view — no aligning into a target box.
+const SCAN_CONFIG = { fps: 15 };
 // html5-qrcode only allows a single facingMode/deviceId key in the first
 // argument — extra constraints (resolution etc.) must go via videoConstraints.
 const VIDEO_CONSTRAINT_ATTEMPTS = [
@@ -183,7 +179,7 @@ defineExpose({ open, close });
             <p v-if="cameraError" class="field-error qr-scanner-error">{{ cameraError }}</p>
             <p v-else-if="error" class="field-error qr-scanner-error">{{ error }}</p>
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
-            <p v-else class="qr-scanner-hint">Hold the QR steady anywhere in the frame — it scans automatically. Raise the screen brightness if it won't read.</p>
+            <p v-else class="qr-scanner-hint">Hold the QR anywhere in the camera view — it detects automatically, no need to align it. Raise the screen brightness if it won't read.</p>
             <button v-if="cameraError || error" type="button" class="qr-scanner-link" @click="retryCamera">Restart camera</button>
 
             <div class="qr-scanner-divider"><span>or type the number</span></div>
