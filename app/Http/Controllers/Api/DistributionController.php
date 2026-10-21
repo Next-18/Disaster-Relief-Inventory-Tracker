@@ -93,4 +93,35 @@ class DistributionController extends Controller
             'count' => $distributions->count(),
         ]);
     }
+
+    public function record(Request $request)
+    {
+        $request->validate([
+            'beneficiary_no' => 'required|string',
+        ]);
+
+        $beneficiary = \App\Models\Beneficiary::where('beneficiary_no', $request->beneficiary_no)->first();
+
+        if (!$beneficiary) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Beneficiary not found',
+            ], 404);
+        }
+
+        $distribution = Distribution::create([
+            'beneficiary_id' => $beneficiary->id,
+            'date_released' => now(),
+            'status' => 'Released',
+            'distributed_by' => $request->user()->id,
+        ]);
+
+        $distribution->load(['beneficiary', 'reliefPackage']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Distribution recorded successfully',
+            'data' => new DistributionResource($distribution),
+        ], 201);
+    }
 }

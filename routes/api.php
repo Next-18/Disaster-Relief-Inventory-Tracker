@@ -53,3 +53,4 @@ Route::get('/distributions', [DistributionController::class, 'index'])->middlewa
 Route::post('/distributions', [DistributionController::class, 'store'])->middleware('auth:sanctum');
 Route::get('/distributions/{id}', [DistributionController::class, 'show'])->middleware('auth:sanctum');
 Route::get('/distributions/beneficiary/{beneficiaryId}', [DistributionController::class, 'byBeneficiary'])->middleware('auth:sanctum');
+Route::post('/distributions/record', [DistributionController::class, 'record'])->middleware('auth:sanctum');
