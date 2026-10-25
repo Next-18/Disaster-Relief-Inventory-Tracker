@@ -1,5 +1,5 @@
 <script setup>
-import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { Link, useForm, usePage, usePoll } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AdminModal from '../../Components/AdminModal.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
@@ -9,14 +9,11 @@ defineOptions({ layout: AdminLayout });
 const props = defineProps({
     location: { type: String, required: true },
     today: { type: String, required: true },
-    totalBeneficiaries: { type: Number, required: true },
-    activeBeneficiaries: { type: Number, required: true },
-    newThisMonth: { type: Number, required: true },
-    availablePackages: { type: Number, required: true },
-    totalPackages: { type: Number, required: true },
-    distributedThisMonth: { type: Number, required: true },
-    totalDistributions: { type: Number, required: true },
+    totalInventoryItems: { type: Number, required: true },
+    pendingDistributions: { type: Number, required: true },
+    fulfilledDistributions: { type: Number, required: true },
     lowStockItems: { type: Array, required: true },
+    inventoryByCategory: { type: Array, required: true },
     stockAlertsCount: { type: Number, required: true },
     recentDistributions: { type: Array, required: true },
     beneficiaries: { type: Array, required: true },
@@ -26,6 +23,10 @@ const props = defineProps({
 const modal = ref(null);
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
+usePoll(30000, {
+    only: ['totalInventoryItems', 'stockAlertsCount', 'pendingDistributions', 'fulfilledDistributions', 'lowStockItems', 'inventoryByCategory', 'recentDistributions'],
+    preserveScroll: true,
+});
 const form = useForm({
     beneficiary_id: '',
     package_id: '',
@@ -64,47 +65,48 @@ function initials(name) {
     <section class="welcome">
         <div>
             <h2>Welcome, {{ $page.props.auth?.user?.name?.split(' ')[0] || 'Administrator' }}</h2>
-            <p>Here’s the latest relief operation overview for <strong>{{ location }}</strong>.</p>
+            <p>Inventory and distribution overview for <strong>{{ location }}</strong>.</p>
         </div>
         <button class="add-button" type="button" @click="openDistributionModal"><span>+</span> Record Distribution</button>
     </section>
 
-    <section class="metrics">
-        <article class="metric-card blue">
-            <span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M17 11a3 3 0 1 0-1.3-5.7M17 14c2.8 0 5 2.3 5 5"/></svg></span>
-            <div><p>Total Beneficiaries</p><strong>{{ totalBeneficiaries }}</strong><small>+{{ newThisMonth }} registered this month</small></div>
+    <section class="metrics dashboard-metrics" aria-label="Relief operations summary" aria-live="polite">
+        <article class="metric-card dashboard-metric blue">
+            <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7M12 11v10M7.5 5 16.5 9"/></svg></span>
+            <div class="dashboard-metric-copy"><p>Inventory items</p><strong>{{ Number(totalInventoryItems).toLocaleString() }}</strong><small>Supply types tracked</small></div>
         </article>
-        <article class="metric-card green">
-            <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 10h16v10H4zM3 6h18v4H3zM12 6v14M9 3h6l-3 3-3-3Z"/></svg></span>
-            <div><p>Available Relief Packs</p><strong>{{ availablePackages }}</strong><small>Across {{ totalPackages }} total packages</small></div>
+        <article class="metric-card dashboard-metric red">
+            <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="m12 3 9 17H3L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg></span>
+            <div class="dashboard-metric-copy"><p>Low stock</p><strong>{{ Number(stockAlertsCount).toLocaleString() }}</strong><small>At or below minimum</small></div>
         </article>
-        <article class="metric-card orange">
-            <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 11h16v8H4zM7 11V7h10v4M8 15h8"/></svg></span>
-            <div><p>Distributed This Month</p><strong>{{ distributedThisMonth }}</strong><small>{{ totalBeneficiaries > 0 ? Math.round((distributedThisMonth / totalBeneficiaries) * 1000) / 10 : 0 }}% of registered families</small></div>
+        <article class="metric-card dashboard-metric orange">
+            <span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <div class="dashboard-metric-copy"><p>Pending distributions</p><strong>{{ Number(pendingDistributions).toLocaleString() }}</strong><small>Awaiting completion</small></div>
         </article>
-        <article class="metric-card red">
-            <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4L12 3ZM12 9v5M12 17h.01"/></svg></span>
-            <div><p>Stock Alerts</p><strong>{{ stockAlertsCount }}</strong><small>Items need attention</small></div>
+        <article class="metric-card dashboard-metric green">
+            <span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg></span>
+            <div class="dashboard-metric-copy"><p>Fulfilled</p><strong>{{ Number(fulfilledDistributions).toLocaleString() }}</strong><small>Packages released</small></div>
         </article>
     </section>
 
     <section class="dashboard-grid">
         <article class="panel distribution" id="distribution">
             <div class="panel-heading">
-                <div><h3>Recent Distribution Records</h3><p>Latest completed relief releases</p></div>
+                <div><h3>Recent Updates</h3><p>Distribution activity · refreshes every 30 seconds</p></div>
                 <Link :href="routes.distribution">View all →</Link>
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DATE RELEASED</th><th>STATUS</th></tr></thead>
+                    <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DATE RELEASED</th><th>RECORDED BY</th><th>STATUS</th></tr></thead>
                     <tbody>
                         <tr v-for="distribution in recentDistributions" :key="distribution.id">
                             <td><i class="avatar" :class="`a${(distribution.id % 4) + 1}`">{{ initials(distribution.beneficiary_name) }}</i><b>{{ distribution.beneficiary_name }}</b><small>{{ distribution.beneficiary_no }}</small></td>
                             <td>{{ distribution.package_name }}</td>
                             <td>{{ distribution.date_released }}</td>
+                            <td><b>{{ distribution.recorded_by }}</b><small>{{ distribution.recorded_at }}</small></td>
                             <td><em class="status" :class="distribution.status === 'Released' ? 'success' : 'pending'">{{ distribution.status }}</em></td>
                         </tr>
-                        <tr v-if="!recentDistributions.length"><td colspan="4" class="empty-cell">No distribution records yet.</td></tr>
+                        <tr v-if="!recentDistributions.length"><td colspan="5" class="empty-cell">No distribution records yet.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -121,11 +123,20 @@ function initials(name) {
                 <div v-if="!lowStockItems.length" class="stock-item"><div><b>No stock alerts</b><small>All items are adequately stocked</small></div></div>
                 <Link class="stock-link" :href="routes.inventory">Manage inventory →</Link>
             </article>
+            <article class="panel category-stock">
+                <div class="panel-heading"><div><h3>Stock by category</h3><p>On hand, grouped by unit</p></div></div>
+                <div v-for="stock in inventoryByCategory" :key="`${stock.category}-${stock.unit}`" class="category-stock-row">
+                    <div><b>{{ stock.category }}</b><small>{{ stock.item_count }} {{ stock.item_count === 1 ? 'item type' : 'item types' }}</small></div>
+                    <strong>{{ Number(stock.quantity).toLocaleString() }} {{ stock.unit }}</strong>
+                </div>
+                <div v-if="!inventoryByCategory.length" class="category-stock-empty">No inventory recorded yet.</div>
+            </article>
             <article class="panel quick">
                 <h3>Quick Actions</h3>
-                <Link :href="`${routes.beneficiaries}?action=add`">♟ <span>Add beneficiary<small>Create a beneficiary account</small></span>›</Link>
-                <Link :href="routes.qrCodes">▦ <span>Scan QR code<small>Verify a relief recipient</small></span>›</Link>
-                <Link :href="routes.reports">📊 <span>View reports<small>Distribution and stock reports</small></span>›</Link>
+                <Link :href="`${routes.beneficiaries}?action=add`">+ <span>Add beneficiary<small>Create a beneficiary record</small></span>›</Link>
+                <Link :href="`${routes.inventory}?action=add`">+ <span>Add inventory item<small>Track a new relief supply</small></span>›</Link>
+                <Link :href="routes.deliveries">↓ <span>Record delivery<small>Add received supplies to stock</small></span>›</Link>
+                <Link :href="routes.distribution">→ <span>Manage distributions<small>Review pending and completed</small></span>›</Link>
             </article>
         </aside>
     </section>

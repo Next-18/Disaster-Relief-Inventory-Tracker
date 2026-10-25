@@ -131,29 +131,33 @@ class AuthController extends Controller
     }
 
     public function dashboard() { 
-        // Calculate real statistics
-        $totalBeneficiaries = Beneficiary::count();
-        $activeBeneficiaries = Beneficiary::where('status', 'Active')->count();
-        $newThisMonth = Beneficiary::where('created_at', '>=', now()->startOfMonth())->count();
-        
+        $totalInventoryItems = InventoryItem::count();
+        $stockAlertsCount = InventoryItem::lowStock()->count();
+        $pendingDistributions = Distribution::where('status', 'Pending')->count();
+        $fulfilledDistributions = Distribution::where('status', 'Released')->count();
+
         $availablePackageTemplates = ReliefPackage::with('inventoryItems:id,item_name,quantity')
             ->where('status', 'Available')
             ->get();
         $packagesReady = $availablePackageTemplates->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)->values();
-        $availablePackages = $packagesReady->count();
-        $totalPackages = ReliefPackage::count();
         
-        $distributedThisMonth = Distribution::where('date_released', '>=', now()->startOfMonth())->count();
-        $totalDistributions = Distribution::count();
-        
-        $stockAlertsCount = InventoryItem::lowStock()->count();
         $lowStockItems = InventoryItem::lowStock()
             ->orderBy('quantity')
             ->orderBy('item_name')
             ->limit(5)
             ->get();
+
+        $inventoryByCategory = InventoryItem::query()
+            ->selectRaw('category, unit, SUM(quantity) as quantity, COUNT(*) as item_count')
+            ->groupBy('category', 'unit')
+            ->orderBy('category')
+            ->orderBy('unit')
+            ->get();
         
-        $recentDistributions = Distribution::with(['beneficiary', 'reliefPackage'])->latest()->take(4)->get();
+        $recentDistributions = Distribution::with(['beneficiary', 'reliefPackage', 'distributor:id,name'])
+            ->latest()
+            ->take(4)
+            ->get();
         
         // Get location from settings
         $barangayName = Setting::get('barangay_name', 'Barangay');
@@ -166,6 +170,8 @@ class AuthController extends Controller
             'beneficiary_no' => $distribution->beneficiary?->beneficiary_no ?? 'N/A',
             'package_name' => $distribution->reliefPackage?->package_name ?? 'Unknown Package',
             'date_released' => $distribution->date_released->format('M d, Y'),
+            'recorded_by' => $distribution->distributor?->name ?? 'System',
+            'recorded_at' => $distribution->created_at?->format('M d, Y, g:i A') ?? 'Unknown time',
             'status' => $distribution->status,
         ])->all();
 
@@ -179,14 +185,11 @@ class AuthController extends Controller
 
         return Inertia::render('Admin/Dashboard', [
             'recentDistributions' => $recentDistributions,
-            'totalBeneficiaries' => $totalBeneficiaries,
-            'activeBeneficiaries' => $activeBeneficiaries,
-            'newThisMonth' => $newThisMonth,
-            'availablePackages' => $availablePackages,
-            'totalPackages' => $totalPackages,
-            'distributedThisMonth' => $distributedThisMonth,
-            'totalDistributions' => $totalDistributions,
+            'totalInventoryItems' => $totalInventoryItems,
+            'pendingDistributions' => $pendingDistributions,
+            'fulfilledDistributions' => $fulfilledDistributions,
             'lowStockItems' => $lowStockItems,
+            'inventoryByCategory' => $inventoryByCategory,
             'stockAlertsCount' => $stockAlertsCount,
             'location' => $location,
             'today' => now()->format('Y-m-d'),
