@@ -52,17 +52,22 @@ function submit() {
                     <input 
                         v-model="form.password" 
                         type="password" 
+                        minlength="12"
                         required 
-                        placeholder="Create a password (min 8 characters)"
+                        placeholder="12+ characters, uppercase, lowercase, and a number"
                     >
+                    <small class="password-hint">Use at least 12 characters with uppercase, lowercase, and a number.</small>
+                    <small v-if="form.errors.password" class="field-error">{{ form.errors.password }}</small>
                 </label>
                 <label>Confirm Password
                     <input 
                         v-model="form.password_confirmation" 
                         type="password" 
+                        minlength="12"
                         required 
                         placeholder="Confirm your password"
                     >
+                    <small v-if="form.errors.password_confirmation" class="field-error">{{ form.errors.password_confirmation }}</small>
                 </label>
                 <button type="submit" class="primary-action" :disabled="form.processing">
                     {{ form.processing ? 'Creating Account...' : 'Create Account' }}
@@ -128,6 +133,17 @@ function submit() {
     display: block;
     margin-bottom: 16px;
 }
+
+.auth-card .password-hint,
+.auth-card .field-error {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.auth-card .password-hint { color: #65748b; }
+.auth-card .field-error { color: #b42318; }
 
 .auth-card label input {
     width: 100%;

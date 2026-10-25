@@ -22,6 +22,13 @@ class InventoryItem extends Model
         return $query->whereColumn('quantity', '<=', 'minimum_stock');
     }
 
+    public function reliefPackages()
+    {
+        return $this->belongsToMany(ReliefPackage::class, 'relief_package_items')
+            ->withPivot('quantity_per_package')
+            ->withTimestamps();
+    }
+
     public function getStatusAttribute($value): string
     {
         return $this->quantity <= $this->minimum_stock ? 'Low Stock' : 'In Stock';

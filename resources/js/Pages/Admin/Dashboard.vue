@@ -146,7 +146,7 @@ function initials(name) {
             <label>Relief Package
                 <select v-model="form.package_id" required :aria-invalid="Boolean(form.errors.package_id)">
                     <option value="">Select package</option>
-                    <option v-for="item in packages" :key="item.id" :value="item.id">{{ item.package_name }}</option>
+                    <option v-for="item in packages" :key="item.id" :value="item.id">{{ item.package_name }} — {{ item.available_quantity }} packs ready</option>
                 </select>
                 <small v-if="form.errors.package_id" class="field-error">{{ form.errors.package_id }}</small>
             </label>

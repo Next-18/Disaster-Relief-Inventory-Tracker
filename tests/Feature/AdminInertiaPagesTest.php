@@ -16,7 +16,7 @@ class AdminInertiaPagesTest extends TestCase
 
     public function test_beneficiaries_page_uses_inertia_and_keeps_create_update_delete_routes_working(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->get(route('admin.beneficiaries'))
             ->assertOk()
@@ -56,7 +56,7 @@ class AdminInertiaPagesTest extends TestCase
 
     public function test_distribution_page_uses_inertia_and_keeps_create_update_delete_routes_working(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $this->actingAs($user);
         $beneficiary = Beneficiary::create([
             'beneficiary_no' => 'BEN-4001',

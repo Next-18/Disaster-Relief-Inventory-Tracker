@@ -17,7 +17,7 @@ class AdminReportsTest extends TestCase
 
     public function test_report_date_and_status_filters_keep_period_totals_consistent_and_show_current_snapshots(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $this->actingAs($user);
 
         $package = ReliefPackage::create(['package_name' => 'Family food pack', 'category' => 'Food', 'status' => 'Available']);
@@ -61,7 +61,7 @@ class AdminReportsTest extends TestCase
 
     public function test_report_rejects_a_date_range_where_end_precedes_start(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->get(route('admin.reports', [
             'start_date' => '2026-09-20',
@@ -71,7 +71,7 @@ class AdminReportsTest extends TestCase
 
     public function test_empty_report_period_displays_zero_totals_and_clear_empty_states(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->get(route('admin.reports', [
             'start_date' => '2026-07-01',
@@ -90,7 +90,7 @@ class AdminReportsTest extends TestCase
 
     public function test_report_exports_respect_filters_and_escape_spreadsheet_formulas(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $this->actingAs($user);
 
         $package = ReliefPackage::create(['package_name' => 'Family food pack', 'category' => 'Food', 'status' => 'Available']);

@@ -39,11 +39,22 @@ class User extends Authenticatable
         return $this->belongsTo(Beneficiary::class);
     }
 
+
     /**
      * Check if user is admin.
      */
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
+    }
+
+    public function canRecordDistributions(): bool
+    {
+        return in_array($this->role, ['admin', 'staff', 'volunteer'], true);
+    }
+
+    public function canReleasePackages(): bool
+    {
+        return in_array($this->role, ['admin', 'staff'], true);
     }
 }

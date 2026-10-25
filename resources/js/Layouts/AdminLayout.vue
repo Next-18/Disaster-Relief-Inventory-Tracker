@@ -10,6 +10,8 @@ const headings = {
     'Admin/Dashboard': ['Dashboard', 'ADMIN PORTAL / OVERVIEW'],
     'Admin/Beneficiaries': ['Beneficiaries', 'ADMIN PORTAL / RECORDS'],
     'Admin/Inventory': ['Inventory', 'ADMIN PORTAL / STOCK CONTROL'],
+    'Admin/Deliveries': ['Stock deliveries', 'ADMIN PORTAL / RECEIVING'],
+    'Admin/Support': ['Support', 'ADMIN PORTAL / ISSUE REPORTS'],
     'Admin/Distribution': ['Distribution', 'ADMIN PORTAL / RELIEF DISTRIBUTION'],
     'Admin/Search': ['Search results', 'ADMIN PORTAL / SEARCH'],
     'Admin/Packages': ['Relief Packages', 'ADMIN PORTAL / PACKAGES'],

@@ -17,7 +17,7 @@ class AdminTopbarTest extends TestCase
 
     public function test_global_search_finds_records_across_all_admin_modules(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $this->actingAs($user);
 
         $beneficiary = Beneficiary::create([
@@ -76,7 +76,7 @@ class AdminTopbarTest extends TestCase
 
     public function test_topbar_notifications_use_current_records_and_quick_actions_target_creation_flows(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $this->actingAs($user);
 
         $beneficiary = Beneficiary::create([

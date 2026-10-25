@@ -16,9 +16,6 @@ const form = useForm({
     barangay_name: props.settings.barangay_name ?? '',
     municipality: props.settings.municipality ?? '',
     province: props.settings.province ?? '',
-    session_timeout: Number(props.settings.session_timeout ?? 30),
-    notifications_enabled: Boolean(props.settings.notifications_enabled),
-    auto_backup_enabled: Boolean(props.settings.auto_backup_enabled),
 });
 const passwordForm = useForm({ current_password: '', password: '', password_confirmation: '' });
 
@@ -31,9 +28,6 @@ watch(() => props.settings, (settings) => {
         barangay_name: settings.barangay_name ?? '',
         municipality: settings.municipality ?? '',
         province: settings.province ?? '',
-        session_timeout: Number(settings.session_timeout ?? 30),
-        notifications_enabled: Boolean(settings.notifications_enabled),
-        auto_backup_enabled: Boolean(settings.auto_backup_enabled),
     });
 }, { deep: true });
 
@@ -72,16 +66,9 @@ function updatePassword() {
                 <label>Province<input v-model="form.province" type="text" required><small v-if="form.errors.province" class="field-error">{{ form.errors.province }}</small></label>
             </div>
         </section>
-        <section class="panel record-panel">
-            <div class="panel-heading"><div><h3>System Settings</h3><p>System configuration and security preferences</p></div></div>
-            <div class="settings-fields">
-                <label class="timeout-field">Session Timeout (minutes)<input v-model.number="form.session_timeout" type="number" min="5" max="1440" required><small v-if="form.errors.session_timeout" class="field-error">{{ form.errors.session_timeout }}</small></label>
-                <div class="settings-grid two-columns checkbox-grid">
-                    <label class="checkbox-setting"><input v-model="form.notifications_enabled" type="checkbox">Enable System Notifications</label>
-                    <label class="checkbox-setting"><input v-model="form.auto_backup_enabled" type="checkbox">Enable Automatic Backups</label>
-                </div>
-                <div class="settings-actions"><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : 'Save Settings' }}</button></div>
-            </div>
+        <section class="settings-save-row">
+            <p>Changes to site and location details are saved together.</p>
+            <button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : 'Save settings' }}</button>
         </section>
     </form>
     <section class="panel record-panel security-panel">
@@ -99,7 +86,7 @@ function updatePassword() {
 </template>
 
 <style scoped>
-.settings-form { display: grid; gap: 18px; }
+.settings-form { display: grid; gap: 14px; }
 .settings-fields { display: grid; gap: 15px; padding: 20px; }
 .settings-fields label { display: grid; gap: 6px; color: #5b6d84; font-size: 11px; font-weight: 700; }
 .settings-fields input:not([type="checkbox"]), .settings-fields textarea { width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid #d9e2ec; border-radius: 7px; background: #fff; color: #29496f; font: inherit; }
@@ -108,11 +95,9 @@ function updatePassword() {
 .two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .three-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .current-password-field { grid-column: 1 / -1; }
-.timeout-field { max-width: 360px; }
-.checkbox-grid .checkbox-setting { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.checkbox-setting input { width: 18px; height: 18px; accent-color: #2563eb; }
-.settings-actions { display: flex; justify-content: flex-end; }
-.security-panel { margin-top: 18px; }
+.settings-save-row { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 2px 4px; }
+.settings-save-row p { margin: 0 auto 0 0; color: #718096; font-size: 12px; }
+.security-panel { margin-top: 14px; }
 .password-guidance { margin: 0; color: #718096; font-size: 12px; }
 .security-save { min-height: 38px; padding: 9px 14px; border: 1px solid #2563eb; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .security-save:hover { border-color: #1d4ed8; background: #1d4ed8; }

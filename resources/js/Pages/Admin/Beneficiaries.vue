@@ -30,6 +30,8 @@ const filters = reactive({
 });
 const selectedIds = ref([]);
 const rowMenuId = ref(null);
+const rowMenuPosition = ref({});
+const menuBeneficiary = computed(() => rows.value.find((row) => row.id === rowMenuId.value) ?? null);
 const bulkMenuOpen = ref(false);
 const beneficiaryModal = ref(null);
 const viewModal = ref(null);
@@ -146,6 +148,27 @@ function closeActionMenusOnEscape(event) {
         bulkMenuOpen.value = false;
         rowMenuId.value = null;
     }
+}
+
+function toggleRowMenu(event, beneficiaryId) {
+    if (rowMenuId.value === beneficiaryId) {
+        rowMenuId.value = null;
+        return;
+    }
+
+    const anchor = event.currentTarget.getBoundingClientRect();
+    const menuHeight = 230;
+    const openAbove = window.innerHeight - anchor.bottom < menuHeight && anchor.top > menuHeight;
+    const top = openAbove
+        ? anchor.top - menuHeight - 4
+        : Math.min(anchor.bottom + 4, window.innerHeight - menuHeight - 8);
+
+    rowMenuPosition.value = {
+        top: `${Math.max(8, top)}px`,
+        right: `${Math.max(8, window.innerWidth - anchor.right)}px`,
+    };
+    rowMenuId.value = beneficiaryId;
+    bulkMenuOpen.value = false;
 }
 
 function closeCredentialsModal() {
@@ -364,22 +387,27 @@ function priorityClass(priority) {
                         <td><span class="tag" :class="priorityClass(beneficiary.priority_type)">{{ beneficiary.priority_type }}</span></td>
                         <td><span class="tag" :class="beneficiary.status === 'Active' ? 'success' : 'warning'">{{ beneficiary.status }}</span></td>
                         <td class="actions-cell"><div class="row-actions-dropdown">
-                            <button type="button" class="row-actions-btn" :aria-expanded="rowMenuId === beneficiary.id" :aria-label="`Actions for ${beneficiary.full_name}`" @click="rowMenuId = rowMenuId === beneficiary.id ? null : beneficiary.id"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
-                            <div v-if="rowMenuId === beneficiary.id" class="row-actions-menu show">
-                                <button type="button" class="row-action-item" @click="toggleSelected(beneficiary.id); rowMenuId = null">{{ selectedIds.includes(beneficiary.id) ? 'Unmark record' : 'Mark record' }}</button>
-                                <div class="bulk-action-divider"/>
-                                <button type="button" class="row-action-item" @click="showDetails(beneficiary)">View details</button>
-                                <button type="button" class="row-action-item" @click="rowMenuId = null; openEditModal(beneficiary)">Edit</button>
-                                <button v-if="beneficiary.qr_code" type="button" class="row-action-item" @click="showQr(beneficiary)">View QR code</button>
-                                <button v-else type="button" class="row-action-item" @click="generateQr(beneficiary)">Generate QR</button>
-                                <div class="bulk-action-divider"/><button type="button" class="row-action-item row-action-danger" @click="rowMenuId = null; deleteBeneficiary(beneficiary)">Delete</button>
-                            </div>
+                            <button type="button" class="row-actions-btn" :aria-expanded="rowMenuId === beneficiary.id" :aria-label="`Actions for ${beneficiary.full_name}`" @click.stop="toggleRowMenu($event, beneficiary.id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
                         </div></td>
                     </tr>
                     <tr v-if="!rows.length"><td colspan="6"><div class="empty-state"><div class="empty-state-icon">♟</div><h4>{{ activeFilters ? 'No matches found' : 'No beneficiaries yet' }}</h4><p>{{ activeFilters ? 'Try adjusting your search or filters.' : 'Add your first household record to get started.' }}</p><button v-if="activeFilters" type="button" class="primary-action" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear filters</button><button v-else type="button" class="primary-action" @click="openAddModal">Add beneficiary</button></div></td></tr>
                 </tbody>
             </table>
         </div>
+        <Teleport to="body">
+            <div v-if="menuBeneficiary" class="beneficiary-menu-portal row-actions-dropdown" :style="rowMenuPosition" @click.stop>
+                <div class="row-actions-menu show beneficiary-row-menu">
+                    <button type="button" class="row-action-item" @click="toggleSelected(menuBeneficiary.id); rowMenuId = null">{{ selectedIds.includes(menuBeneficiary.id) ? 'Unmark record' : 'Mark record' }}</button>
+                    <div class="bulk-action-divider"/>
+                    <button type="button" class="row-action-item" @click="showDetails(menuBeneficiary)">View details</button>
+                    <button type="button" class="row-action-item" @click="rowMenuId = null; openEditModal(menuBeneficiary)">Edit</button>
+                    <button v-if="menuBeneficiary.qr_code" type="button" class="row-action-item" @click="showQr(menuBeneficiary)">View QR code</button>
+                    <button v-else type="button" class="row-action-item" @click="generateQr(menuBeneficiary)">Generate QR</button>
+                    <div class="bulk-action-divider"/>
+                    <button type="button" class="row-action-item row-action-danger" @click="rowMenuId = null; deleteBeneficiary(menuBeneficiary)">Delete</button>
+                </div>
+            </div>
+        </Teleport>
         <InertiaPagination :links="beneficiaries.links" :show="beneficiaries.last_page > 1" />
     </section>
 
@@ -424,27 +452,32 @@ function priorityClass(priority) {
     </AdminModal>
 
     <!-- Credentials Display Modal -->
-    <AdminModal ref="credentialsModal" v-if="credentials" class="form-modal" @click.self="closeCredentialsModal">
-        <div class="modal-title">
-            <h3>User Account Created</h3>
-            <p>Here are the login credentials for {{ credentials.beneficiary_name }}:</p>
+    <AdminModal ref="credentialsModal" v-if="credentials" class="form-modal credentials-modal" @click.self="closeCredentialsModal">
+        <div class="credentials-heading">
+            <div class="credentials-heading-icon" aria-hidden="true">✓</div>
+            <div class="credentials-heading-copy">
+                <span class="credentials-eyebrow">Beneficiary account</span>
+                <h3>Login details are ready</h3>
+                <p>Account for <strong>{{ credentials.beneficiary_name }}</strong></p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Close credentials" @click="closeCredentialsModal">×</button>
         </div>
-        <div class="credentials-display">
-            <div class="credential-item">
-                <label>Username (Beneficiary Number):</label>
+        <div class="credentials-content">
+            <div class="credential-card">
+                <label>Username <span>Beneficiary number</span></label>
                 <div class="credential-value">{{ credentials.username }}</div>
             </div>
-            <div class="credential-item">
-                <label>Temporary Password:</label>
+            <div class="credential-card">
+                <label>Temporary password</label>
                 <div class="credential-value">{{ credentials.password }}</div>
             </div>
             <div class="security-notice">
-                <strong>Security Notice:</strong>
-                <p>Please provide these credentials to the beneficiary securely. This is a temporary password - they will be required to set their own password on first login.</p>
+                <span class="security-notice-icon" aria-hidden="true">i</span>
+                <p><strong>Give these details to the beneficiary privately.</strong> They’ll be asked to choose a new password when they first sign in.</p>
             </div>
         </div>
-        <div class="modal-actions">
-            <button type="button" class="primary-action" @click="closeCredentialsModal">I've saved the credentials</button>
+        <div class="credentials-actions">
+            <button type="button" class="primary-action" @click="closeCredentialsModal">Done, I’ve saved them</button>
         </div>
     </AdminModal>
 </template>
@@ -551,6 +584,34 @@ function priorityClass(priority) {
     margin: 0;
 }
 
+.form-modal.credentials-modal {
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+    border: 1px solid #e5eaf0;
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(15, 35, 60, .22);
+}
+.credentials-heading { display: flex; align-items: flex-start; gap: 13px; padding: 22px 24px 18px; border-bottom: 1px solid #edf1f5; }
+.credentials-heading-icon { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 12px; background: #e8f7ef; color: #16834d; font-size: 19px; font-weight: 800; }
+.credentials-heading-copy { min-width: 0; flex: 1; }
+.credentials-eyebrow { color: #6f83a0; font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.credentials-heading-copy h3 { margin: 4px 0 0; color: #173b67; font-size: 17px; line-height: 1.3; }
+.credentials-heading-copy p { margin: 5px 0 0; color: #74849a; font-size: 12px; line-height: 1.5; }
+.credentials-heading-copy p strong { color: #334b68; font-weight: 600; }
+.credentials-content { display: grid; gap: 12px; padding: 20px 24px; }
+.credential-card { display: grid; gap: 7px; }
+.credential-card label { display: flex; align-items: baseline; gap: 6px; color: #536780; font-size: 11px; font-weight: 700; }
+.credential-card label span { color: #8795a7; font-size: 10px; font-weight: 500; }
+.credentials-modal .credential-value { overflow-wrap: anywhere; padding: 12px 14px; border: 1px solid #e1e8f0; border-radius: 9px; background: #f7f9fc; color: #203a5b; font-family: 'Courier New', monospace; font-size: 17px; font-weight: 700; letter-spacing: .04em; }
+.credentials-modal .security-notice { display: flex; align-items: flex-start; gap: 10px; margin: 2px 0 0; padding: 12px 13px; border: 1px solid #f3d78a; border-radius: 10px; background: #fff9e8; }
+.security-notice-icon { display: grid; width: 19px; height: 19px; flex: 0 0 19px; place-items: center; border-radius: 50%; background: #f8e7b4; color: #875500; font-size: 12px; font-weight: 800; }
+.credentials-modal .security-notice p { color: #765320; font-size: 11px; line-height: 1.55; }
+.credentials-modal .security-notice p strong { color: #684500; }
+.credentials-actions { display: flex; justify-content: flex-end; padding: 0 24px 20px; }
+.credentials-actions .primary-action { min-height: 40px; border-radius: 8px; }
+@media (max-width: 480px) { .credentials-heading { padding: 19px 18px 15px; }.credentials-content { padding: 17px 18px; }.credentials-actions { padding: 0 18px 18px; } }
+
 
 
 .detail-modal .detail-modal-title {
@@ -614,6 +675,8 @@ function priorityClass(priority) {
 .beneficiaries-table .beneficiary-row:hover { background: #fafcff; }
 .beneficiaries-table .beneficiary-row.selected { background: #f5f8ff; }
 .beneficiaries-table .beneficiary-row.selected td:first-child { box-shadow: inset 3px 0 #6b9cf0; }
+.beneficiary-menu-portal { position: fixed; z-index: 1000; }
+.beneficiary-row-menu { position: static; display: block; max-height: min(230px, calc(100vh - 16px)); overflow-y: auto; margin: 0; }
 .beneficiary-cell b { color: #233d5b; font-size: 12px; font-weight: 650; }
 .beneficiary-cell small { color: #8290a3; }
 .row-actions-btn { width: 34px; height: 34px; border-color: #e3e8ef; border-radius: 9px; transition: background .15s ease, border-color .15s ease, color .15s ease; }

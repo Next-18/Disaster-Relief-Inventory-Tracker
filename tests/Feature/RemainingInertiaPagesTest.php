@@ -23,7 +23,7 @@ class RemainingInertiaPagesTest extends TestCase
                 ->component('Auth/Login')
                 ->where('routeUrls.loginAttempt', route('login.attempt')));
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->get(route('admin.search', ['q' => 'record']))
             ->assertInertia(fn (Assert $page) => $page->component('Admin/Search')->where('term', 'record'));
@@ -49,7 +49,7 @@ class RemainingInertiaPagesTest extends TestCase
 
     public function test_qr_codes_inertia_navigation_does_not_return_the_legacy_ajax_json_payload(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $version = app(HandleInertiaRequests::class)->version(request());
 
@@ -66,7 +66,7 @@ class RemainingInertiaPagesTest extends TestCase
 
     public function test_qr_codes_legacy_ajax_request_still_returns_its_json_payload(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->withHeader('X-Requested-With', 'XMLHttpRequest')
             ->getJson(route('admin.qr-codes'))
@@ -76,7 +76,7 @@ class RemainingInertiaPagesTest extends TestCase
 
     public function test_package_crud_and_settings_submission_keep_validation_and_flash_feedback(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->from(route('admin.packages'))
             ->withHeader('X-Inertia', 'true')
@@ -135,7 +135,7 @@ class RemainingInertiaPagesTest extends TestCase
 
     public function test_lost_qr_action_updates_the_existing_beneficiary_record(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
         $beneficiary = Beneficiary::create([
             'beneficiary_no' => 'BEN-9001',
             'full_name' => 'Nina Dela Cruz',

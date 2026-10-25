@@ -30,7 +30,7 @@ class PackageController extends Controller
             $query->where('category', $request->category);
         }
 
-        $packages = $query->orderBy('package_name')->get();
+        $packages = $query->with('inventoryItems:id,item_name,unit,quantity')->orderBy('package_name')->get();
 
         return response()->json([
             'success' => true,
@@ -41,7 +41,12 @@ class PackageController extends Controller
 
     public function available()
     {
-        $packages = ReliefPackage::where('status', 'Available')->orderBy('package_name')->get();
+        $packages = ReliefPackage::with('inventoryItems:id,item_name,unit,quantity')
+            ->where('status', 'Available')
+            ->orderBy('package_name')
+            ->get()
+            ->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)
+            ->values();
 
         return response()->json([
             'success' => true,

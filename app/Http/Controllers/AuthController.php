@@ -7,6 +7,7 @@ use App\Models\Beneficiary;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -19,12 +20,12 @@ class AuthController extends Controller
 {
     public function showLogin()
     {
-        return Auth::check() ? redirect()->route('dashboard') : Inertia::render('Auth/Login');
+        return Auth::check() ? $this->redirectForRole(Auth::user()) : Inertia::render('Auth/Login');
     }
 
     public function showRegister()
     {
-        return Auth::check() ? redirect()->route('dashboard') : Inertia::render('Auth/Register');
+        return Auth::check() ? $this->redirectForRole(Auth::user()) : Inertia::render('Auth/Register');
     }
 
     public function register(Request $request)
@@ -32,7 +33,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'beneficiary_no' => ['required', 'string', 'max:20'],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()],
         ]);
 
         // Check if beneficiary exists
@@ -40,6 +41,10 @@ class AuthController extends Controller
         
         if (!$beneficiary) {
             return back()->withErrors(['beneficiary_no' => 'Beneficiary number not found. Please contact admin for assistance.']);
+        }
+
+        if (mb_strtolower(trim($beneficiary->full_name)) !== mb_strtolower(trim($validated['full_name']))) {
+            return back()->withErrors(['beneficiary_no' => 'The details do not match our records. Please contact admin for assistance.']);
         }
 
         // Check if user already exists for this beneficiary
@@ -73,13 +78,25 @@ class AuthController extends Controller
 
         $credentials = $request->validate(['email' => ['required'], 'password' => ['required', 'string']]);
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            if (!Auth::user()->canRecordDistributions()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return back()->withErrors(['email' => 'Beneficiary accounts must sign in through the mobile app.'])->onlyInput('email');
+            }
             RateLimiter::clear($key);
             $request->session()->regenerate();
-            return redirect()->intended(route('dashboard'));
+            return redirect()->intended(route(Auth::user()->isAdmin() ? 'dashboard' : 'admin.distribution'));
         }
 
         RateLimiter::hit($key, 60);
         return back()->withErrors(['email' => 'The provided account details do not match our records.'])->onlyInput('email');
+    }
+
+    private function redirectForRole(User $user)
+    {
+        return redirect()->route($user->isAdmin() ? 'dashboard' : ($user->canRecordDistributions() ? 'admin.distribution' : 'dashboard'));
     }
 
     public function showChangePassword()
@@ -119,7 +136,11 @@ class AuthController extends Controller
         $activeBeneficiaries = Beneficiary::where('status', 'Active')->count();
         $newThisMonth = Beneficiary::where('created_at', '>=', now()->startOfMonth())->count();
         
-        $availablePackages = ReliefPackage::where('status', 'Available')->count();
+        $availablePackageTemplates = ReliefPackage::with('inventoryItems:id,item_name,quantity')
+            ->where('status', 'Available')
+            ->get();
+        $packagesReady = $availablePackageTemplates->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)->values();
+        $availablePackages = $packagesReady->count();
         $totalPackages = ReliefPackage::count();
         
         $distributedThisMonth = Distribution::where('date_released', '>=', now()->startOfMonth())->count();
@@ -170,7 +191,11 @@ class AuthController extends Controller
             'location' => $location,
             'today' => now()->format('Y-m-d'),
             'beneficiaries' => Beneficiary::where('status', 'Active')->orderBy('full_name')->get(['id', 'full_name', 'beneficiary_no']),
-            'packages' => ReliefPackage::where('status', 'Available')->orderBy('package_name')->get(['id', 'package_name']),
+            'packages' => $packagesReady->sortBy('package_name')->map(fn (ReliefPackage $package) => [
+                'id' => $package->id,
+                'package_name' => $package->package_name,
+                'available_quantity' => $package->available_quantity,
+            ])->values(),
         ]);
     }
 

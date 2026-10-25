@@ -6,13 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreDistributionRequest;
 use App\Http\Resources\DistributionResource;
 use App\Models\Distribution;
+use App\Models\Beneficiary;
+use App\Services\DistributionStockService;
+use App\Services\BeneficiaryNotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DistributionController extends Controller
 {
     public function index(Request $request)
     {
         $query = Distribution::with(['beneficiary', 'reliefPackage']);
+
+        if (! $request->user()->canReleasePackages()) {
+            $query->where('beneficiary_id', $request->user()->beneficiary_id);
+        }
 
         if ($request->filled('search')) {
             $search = $request->input('search');
@@ -55,19 +63,18 @@ class DistributionController extends Controller
         ]);
     }
 
-    public function store(StoreDistributionRequest $request)
+    public function store(StoreDistributionRequest $request, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
     {
         $data = $request->validated();
         $data['distributed_by'] = $request->user()->id;
 
-        $distribution = Distribution::create($data);
+        $distribution = DB::transaction(function () use ($data, $stock) {
+            $distribution = Distribution::create($data);
+            $stock->consumeFor($distribution);
+            return $distribution;
+        });
         $distribution->load(['beneficiary', 'reliefPackage']);
-
-        // A released distribution means the package was received — drop it
-        // from the available packages list.
-        if ($distribution->status === 'Released' && $distribution->reliefPackage) {
-            $distribution->reliefPackage->update(['status' => 'Not Available']);
-        }
+        $notifications->notifyPendingAssignments([$distribution]);
 
         return response()->json([
             'success' => true,
@@ -76,9 +83,13 @@ class DistributionController extends Controller
         ], 201);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $distribution = Distribution::with(['beneficiary', 'reliefPackage'])->findOrFail($id);
+        $query = Distribution::with(['beneficiary', 'reliefPackage']);
+        if (! $request->user()->canReleasePackages()) {
+            $query->where('beneficiary_id', $request->user()->beneficiary_id);
+        }
+        $distribution = $query->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -86,8 +97,10 @@ class DistributionController extends Controller
         ]);
     }
 
-    public function byBeneficiary($beneficiaryId)
+    public function byBeneficiary(Request $request, $beneficiaryId)
     {
+        abort_unless($request->user()->canReleasePackages() || (int) $request->user()->beneficiary_id === (int) $beneficiaryId, 403);
+
         $distributions = Distribution::with(['reliefPackage'])
             ->where('beneficiary_id', $beneficiaryId)
             ->latest('date_released')
@@ -100,13 +113,14 @@ class DistributionController extends Controller
         ]);
     }
 
-    public function record(Request $request)
+    public function record(Request $request, DistributionStockService $stock)
     {
-        $request->validate([
+        $validated = $request->validate([
             'beneficiary_no' => 'required|string',
+            'package_id' => 'required|integer|exists:relief_packages,id',
         ]);
 
-        $beneficiary = \App\Models\Beneficiary::where('beneficiary_no', $request->beneficiary_no)->first();
+        $beneficiary = Beneficiary::where('beneficiary_no', $request->beneficiary_no)->where('status', 'Active')->first();
 
         if (!$beneficiary) {
             return response()->json([
@@ -115,12 +129,17 @@ class DistributionController extends Controller
             ], 404);
         }
 
-        $distribution = Distribution::create([
-            'beneficiary_id' => $beneficiary->id,
-            'date_released' => now(),
-            'status' => 'Released',
-            'distributed_by' => $request->user()->id,
-        ]);
+        $distribution = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
+            $distribution = Distribution::create([
+                'beneficiary_id' => $beneficiary->id,
+                'package_id' => $validated['package_id'],
+                'date_released' => now(),
+                'status' => 'Released',
+                'distributed_by' => $request->user()->id,
+            ]);
+            $stock->consumeFor($distribution);
+            return $distribution;
+        });
 
         $distribution->load(['beneficiary', 'reliefPackage']);
 

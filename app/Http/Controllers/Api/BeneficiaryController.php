@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\BeneficiaryResource;
 use App\Models\Beneficiary;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rules\Password;
 
 class BeneficiaryController extends Controller
 {
     public function index(Request $request)
     {
         $query = Beneficiary::query();
+
+        if (! $request->user()->canReleasePackages()) {
+            $query->whereKey($request->user()->beneficiary_id);
+        }
 
         if ($request->filled('search')) {
             $search = $request->input('search');
@@ -40,8 +45,9 @@ class BeneficiaryController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
+        abort_unless($this->mayViewBeneficiary($request->user(), (int) $id) || $request->user()->canReleasePackages(), 403);
         $beneficiary = Beneficiary::findOrFail($id);
 
         return response()->json([
@@ -53,6 +59,7 @@ class BeneficiaryController extends Controller
     public function showByQrCode($qrCode)
     {
         $beneficiary = Beneficiary::where('beneficiary_no', $qrCode)->firstOrFail();
+        abort_unless($this->mayViewBeneficiary(request()->user(), (int) $beneficiary->id) || request()->user()->canRecordDistributions(), 403);
 
         return response()->json([
             'success' => true,
@@ -63,7 +70,7 @@ class BeneficiaryController extends Controller
     public function update(Request $request, $id)
     {
         $user = $request->user();
-        if ($user->role !== 'admin' && (int)$user->beneficiary_id !== (int)$id) {
+        if (! $this->mayViewBeneficiary($user, (int) $id)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized to update this account.',
@@ -78,8 +85,18 @@ class BeneficiaryController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
             'current_password' => ['nullable', 'required_with:new_password', 'string'],
-            'new_password' => ['nullable', 'string', 'min:6', 'confirmed'],
+            'new_password' => ['nullable', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
         ]);
+
+        $linkedUser = $beneficiary->user ?: \App\Models\User::where('beneficiary_id', $beneficiary->id)->first();
+        if (!empty($validated['new_password']) && $linkedUser
+            && !\Illuminate\Support\Facades\Hash::check($validated['current_password'], $linkedUser->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your current password is incorrect.',
+                'errors' => ['current_password' => ['Your current password is incorrect.']],
+            ], 422);
+        }
 
         if (!empty($validated['full_name'])) {
             $existingByName = Beneficiary::where('full_name', $validated['full_name'])
@@ -109,23 +126,18 @@ class BeneficiaryController extends Controller
 
         $beneficiary->save();
 
-        $linkedUser = $beneficiary->user ?: \App\Models\User::where('beneficiary_id', $beneficiary->id)->first();
-
         if (!empty($validated['full_name']) && $linkedUser) {
             $linkedUser->name = $beneficiary->full_name;
             $linkedUser->save();
         }
 
         if (!empty($validated['new_password']) && $linkedUser) {
-            if (!\Illuminate\Support\Facades\Hash::check($validated['current_password'], $linkedUser->password)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Your current password is incorrect.',
-                    'errors' => ['current_password' => ['Your current password is incorrect.']],
-                ], 422);
-            }
             $linkedUser->password = bcrypt($validated['new_password']);
             $linkedUser->save();
+            $currentTokenId = $request->user()->currentAccessToken()?->getKey();
+            $linkedUser->tokens()
+                ->when($currentTokenId, fn ($tokens) => $tokens->where('id', '!=', $currentTokenId))
+                ->delete();
         }
 
         return response()->json([
@@ -133,5 +145,10 @@ class BeneficiaryController extends Controller
             'message' => 'Account updated successfully.',
             'data' => new BeneficiaryResource($beneficiary),
         ]);
+    }
+
+    private function mayViewBeneficiary($user, int $beneficiaryId): bool
+    {
+        return $user?->isAdmin() || (int) $user?->beneficiary_id === $beneficiaryId;
     }
 }

@@ -20,10 +20,23 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::updateOrCreate(
-            ['email' => 'admin@barangay.gov.ph'],
-            ['name' => 'Barangay Administrator', 'password' => Hash::make('password')]
-        );
+        $admin = User::firstOrNew(['email' => 'admin@barangay.gov.ph']);
+        $admin->name = 'Barangay Administrator';
+        $admin->role = 'admin';
+        if (! $admin->exists || Hash::check('password', $admin->password)) {
+            $password = env('ADMIN_SEED_PASSWORD');
+            if (! is_string($password) || strlen($password) < 12) {
+                throw new \RuntimeException('Set ADMIN_SEED_PASSWORD to a unique password of at least 12 characters before seeding.');
+            }
+            $admin->password = $password;
+        }
+        $admin->save();
+
+        // Production seeding may create the initial administrator, but must
+        // never populate live records with the local demonstration dataset.
+        if (app()->isProduction()) {
+            return;
+        }
 
         Beneficiary::updateOrCreate(['beneficiary_no' => 'BEN-1024'], ['full_name' => 'Maria Reyes', 'contact_number' => '0917 555 1024', 'address' => 'Purok 2, San Juan', 'household_size' => 5, 'priority_type' => 'Senior Citizen']);
         Beneficiary::updateOrCreate(['beneficiary_no' => 'BEN-0981'], ['full_name' => 'Juan Dela Cruz', 'contact_number' => '0918 222 0981', 'address' => 'Purok 4, San Juan', 'household_size' => 4, 'priority_type' => 'Regular']);

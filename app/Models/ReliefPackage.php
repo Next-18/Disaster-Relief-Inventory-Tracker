@@ -12,4 +12,27 @@ class ReliefPackage extends Model
     {
         return $this->hasMany(Distribution::class, 'package_id');
     }
+
+    public function inventoryItems()
+    {
+        return $this->belongsToMany(InventoryItem::class, 'relief_package_items')
+            ->withPivot('quantity_per_package')
+            ->withTimestamps();
+    }
+
+    public function getAvailableQuantityAttribute(): int
+    {
+        $items = $this->relationLoaded('inventoryItems')
+            ? $this->inventoryItems
+            : $this->inventoryItems()->get();
+
+        if ($items->isEmpty()) {
+            return 0;
+        }
+
+        return (int) $items->min(fn (InventoryItem $item) => intdiv(
+            (int) $item->quantity,
+            max(1, (int) $item->pivot->quantity_per_package),
+        ));
+    }
 }

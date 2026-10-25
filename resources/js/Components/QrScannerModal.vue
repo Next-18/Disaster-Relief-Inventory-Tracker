@@ -41,13 +41,19 @@ let lightingTouchedByUser = false;
 
 // No qrbox: the decoder scans the whole camera frame, so the QR pass
 // only has to be somewhere in view — no aligning into a target box.
-const SCAN_CONFIG = { fps: 15 };
+const SCAN_CONFIG = {
+    fps: 20,
+    qrbox: (viewfinderWidth, viewfinderHeight) => {
+        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.78);
+        return { width: size, height: size };
+    },
+};
 // html5-qrcode only allows a single facingMode/deviceId key in the first
 // argument — extra constraints (resolution etc.) must go via videoConstraints.
 const VIDEO_CONSTRAINT_ATTEMPTS = [
     // focusMode keeps the pass sharp wherever it's held; browsers that
     // don't support it ignore the preference.
-    { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, focusMode: 'continuous', exposureMode: 'continuous', whiteBalanceMode: 'continuous' },
+    { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: 'continuous', exposureMode: 'continuous', whiteBalanceMode: 'continuous' },
     { facingMode: 'environment', focusMode: 'continuous' },
     { facingMode: 'environment' },
     { facingMode: 'user' },
@@ -485,8 +491,8 @@ defineExpose({ open, close });
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
             <p v-else-if="detected" class="qr-scanner-hint qr-scanner-success">QR detected — opening record…</p>
             <p v-else-if="cameraActive && lowLight && !cameraControls.torch" class="qr-scanner-hint">Scene looks dark — raise the pass's brightness or move to better light.</p>
-            <p v-else-if="cameraActive" class="qr-scanner-hint">Scanning… hold the QR anywhere in view — it reads automatically.</p>
-            <p v-else class="qr-scanner-hint">Just hold the QR anywhere in view — it reads automatically. Raise the screen brightness if it won't pick up.</p>
+            <p v-else-if="cameraActive" class="qr-scanner-hint">Scanning… center the QR inside the guide and hold it steady.</p>
+            <p v-else class="qr-scanner-hint">Center the QR inside the guide and hold it steady. Raise screen brightness if it won't pick up.</p>
             <button v-if="cameraError || error" type="button" class="qr-scanner-link" @click="retryCamera">Restart camera</button>
 
             <div class="qr-scanner-divider"><span>or type the number</span></div>

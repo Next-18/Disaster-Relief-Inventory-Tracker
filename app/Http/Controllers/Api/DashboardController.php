@@ -14,11 +14,47 @@ class DashboardController extends Controller
 {
     public function stats()
     {
+        $user = request()->user();
+        if ($user->role === 'user') {
+            $beneficiary = $user->beneficiary;
+            $distributions = Distribution::with('reliefPackage')
+                ->where('beneficiary_id', $user->beneficiary_id)
+                ->latest('date_released')
+                ->take(5)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'beneficiary' => $beneficiary ? [
+                        'id' => $beneficiary->id,
+                        'beneficiary_no' => $beneficiary->beneficiary_no,
+                        'full_name' => $beneficiary->full_name,
+                    ] : null,
+                    'distributions' => [
+                        'total' => Distribution::where('beneficiary_id', $user->beneficiary_id)->count(),
+                        'recent' => $distributions->map(fn ($distribution) => [
+                            'id' => $distribution->id,
+                            'date_released' => $distribution->date_released?->format('Y-m-d'),
+                            'package_name' => $distribution->reliefPackage?->package_name ?? 'Unknown',
+                            'status' => $distribution->status,
+                        ])->values(),
+                    ],
+                ],
+            ]);
+        }
+
+        abort_unless($user->isAdmin() || $user->role === 'staff', 403);
+
         $totalBeneficiaries = Beneficiary::count();
         $activeBeneficiaries = Beneficiary::where('status', 'Active')->count();
         $newThisMonth = Beneficiary::where('created_at', '>=', now()->startOfMonth())->count();
 
-        $availablePackages = ReliefPackage::where('status', 'Available')->count();
+        $availablePackages = ReliefPackage::with('inventoryItems:id,item_name,quantity')
+            ->where('status', 'Available')
+            ->get()
+            ->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)
+            ->count();
         $totalPackages = ReliefPackage::count();
 
         $distributedThisMonth = Distribution::where('date_released', '>=', now()->startOfMonth())->count();

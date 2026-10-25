@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BeneficiaryController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DistributionController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PackageController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -25,11 +26,13 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 // Authentication routes
-Route::post('/auth/register', [AuthController::class, 'register']);
-Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 Route::get('/auth/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
 Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->middleware('auth:sanctum');
+Route::get('/notifications', [NotificationController::class, 'index'])->middleware('auth:sanctum');
+Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])->middleware('auth:sanctum');
 
 // Dashboard routes
 Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->middleware('auth:sanctum');
@@ -41,8 +44,8 @@ Route::put('/beneficiaries/{id}', [BeneficiaryController::class, 'update'])->mid
 Route::get('/beneficiaries/qr/{qrCode}', [BeneficiaryController::class, 'showByQrCode'])->middleware('auth:sanctum');
 
 // Inventory routes
-Route::get('/inventory', [InventoryController::class, 'index'])->middleware('auth:sanctum');
-Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock'])->middleware('auth:sanctum');
+Route::get('/inventory', [InventoryController::class, 'index'])->middleware(['auth:sanctum', 'distribution-staff']);
+Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock'])->middleware(['auth:sanctum', 'distribution-staff']);
 
 // Relief Package routes
 Route::get('/packages', [PackageController::class, 'index'])->middleware('auth:sanctum');
@@ -50,7 +53,7 @@ Route::get('/packages/available', [PackageController::class, 'available'])->midd
 
 // Distribution routes
 Route::get('/distributions', [DistributionController::class, 'index'])->middleware('auth:sanctum');
-Route::post('/distributions', [DistributionController::class, 'store'])->middleware('auth:sanctum');
+Route::post('/distributions', [DistributionController::class, 'store'])->middleware(['auth:sanctum', 'admin']);
 Route::get('/distributions/{id}', [DistributionController::class, 'show'])->middleware('auth:sanctum');
 Route::get('/distributions/beneficiary/{beneficiaryId}', [DistributionController::class, 'byBeneficiary'])->middleware('auth:sanctum');
-Route::post('/distributions/record', [DistributionController::class, 'record'])->middleware('auth:sanctum');
+Route::post('/distributions/record', [DistributionController::class, 'record'])->middleware(['auth:sanctum', 'admin']);

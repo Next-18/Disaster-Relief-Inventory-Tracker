@@ -8,12 +8,16 @@ use App\Models\Distribution;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
+use App\Models\StockDelivery;
 use App\Models\User;
+use App\Services\DistributionStockService;
+use App\Services\BeneficiaryNotificationService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use SimpleSoftwareIO\QrCode\Facades\QrCode as QRCodeGenerator;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
 class AdminController extends Controller
@@ -352,8 +356,89 @@ class AdminController extends Controller
             'totalInventoryItems' => $totalInventoryItems,
             'lowStockCount' => $lowStockCount,
             'categoryCount' => $categoryCount,
+            'categories' => InventoryItem::query()->select('category')->distinct()->orderBy('category')->pluck('category'),
             'filters' => $request->only(['search', 'stock_status', 'per_page']),
+            'canManageInventory' => $request->user()->isAdmin(),
+            'canUpdateStock' => $request->user()->canReleasePackages(),
         ]);
+    }
+
+    public function deliveries(Request $request)
+    {
+        $search = trim((string) $request->input('search', ''));
+        $deliveries = StockDelivery::query()
+            ->with(['receiver:id,name', 'items.inventoryItem:id,item_name,unit'])
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($matches) use ($search) {
+                    $matches->where('source', 'like', "%{$search}%")
+                        ->orWhere('reference_number', 'like', "%{$search}%")
+                        ->orWhereHas('items.inventoryItem', fn ($items) => $items->where('item_name', 'like', "%{$search}%"));
+                });
+            })
+            ->latest('delivery_date')->latest('id')->paginate(10)->withQueryString();
+
+        return Inertia::render('Admin/Deliveries', [
+            'deliveries' => $deliveries,
+            'inventoryItems' => InventoryItem::query()->orderBy('item_name')->get(['id', 'item_name', 'unit']),
+            'filters' => $request->only('search'),
+        ]);
+    }
+
+    public function storeDelivery(Request $request)
+    {
+        $validated = $request->validate([
+            'source' => ['required', 'string', 'max:255'],
+            'reference_number' => ['nullable', 'string', 'max:100'],
+            'delivery_date' => ['required', 'date', 'before_or_equal:today'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'items' => ['required', 'array', 'min:1', 'max:100'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', 'exists:inventory_items,id'],
+            'items.*.quantity_received' => ['required', 'integer', 'min:1', 'max:4294967295'],
+            'items.*.quantity_damaged' => ['required', 'integer', 'min:0', 'lte:items.*.quantity_received', 'max:4294967295'],
+            'items.*.condition_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $delivery = DB::transaction(function () use ($validated) {
+            $delivery = StockDelivery::create([
+                'source' => trim($validated['source']),
+                'reference_number' => filled($validated['reference_number'] ?? null) ? trim($validated['reference_number']) : null,
+                'delivery_date' => $validated['delivery_date'],
+                'notes' => filled($validated['notes'] ?? null) ? trim($validated['notes']) : null,
+                'received_by' => auth()->id(),
+            ]);
+
+            foreach ($validated['items'] as $line) {
+                $item = InventoryItem::query()->lockForUpdate()->findOrFail($line['inventory_item_id']);
+                $received = (int) $line['quantity_received'];
+                $damaged = (int) $line['quantity_damaged'];
+                $accepted = $received - $damaged;
+                $nextQuantity = (int) $item->quantity + $accepted;
+                if ($nextQuantity > 4294967295) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'items' => "Receiving {$item->item_name} would exceed its maximum stock quantity.",
+                    ]);
+                }
+
+                $delivery->items()->create([
+                    'inventory_item_id' => $item->id,
+                    'quantity_received' => $received,
+                    'quantity_damaged' => $damaged,
+                    'condition_note' => filled($line['condition_note'] ?? null) ? trim($line['condition_note']) : null,
+                ]);
+
+                if ($accepted > 0) {
+                    $item->update([
+                        'quantity' => $nextQuantity,
+                        'status' => $nextQuantity <= $item->minimum_stock ? 'Low Stock' : 'In Stock',
+                    ]);
+                }
+            }
+
+            $this->logAudit('receive', 'inventory', "Recorded delivery #{$delivery->id} from {$delivery->source}");
+            return $delivery;
+        });
+
+        return redirect()->route('admin.deliveries')->with('success', "Delivery #{$delivery->id} recorded; usable quantities were added to inventory.");
     }
 
     protected function inventoryValidationRules(): array
@@ -394,9 +479,48 @@ class AdminController extends Controller
         return redirect()->route('admin.inventory')->with('success', 'Inventory item updated successfully.');
     }
 
+    public function adjustInventoryStock(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            'issue_type' => ['required', 'in:stock-count,received,damaged,expired,other'],
+            'details' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        $item = DB::transaction(function () use ($id, $validated) {
+            $item = InventoryItem::query()->lockForUpdate()->findOrFail($id);
+            $previousQuantity = (int) $item->quantity;
+            $nextQuantity = (int) $validated['quantity'];
+            $item->update([
+                'quantity' => $nextQuantity,
+                'status' => $nextQuantity <= $item->minimum_stock ? 'Low Stock' : 'In Stock',
+            ]);
+
+            $issueType = str_replace('-', ' ', $validated['issue_type']);
+            $action = in_array($validated['issue_type'], ['damaged', 'expired', 'other'], true)
+                ? 'report'
+                : 'stock-adjustment';
+            $this->logAudit(
+                $action,
+                'inventory',
+                ucfirst($issueType) . " report for {$item->item_name}: quantity changed from {$previousQuantity} to {$nextQuantity} {$item->unit}. Details: " . trim($validated['details'])
+            );
+
+            return $item;
+        });
+
+        return redirect()->route('admin.inventory')->with(
+            'success',
+            "Stock for {$item->item_name} was updated and recorded for administrator review."
+        );
+    }
+
     public function deleteInventory($id)
     {
         $item = InventoryItem::findOrFail($id);
+        if ($item->reliefPackages()->exists()) {
+            return back()->with('error', 'This supply is used in a package recipe. Remove it from the recipe before deleting it.');
+        }
         $itemName = $item->item_name;
         $item->delete();
         $this->logAudit('delete', 'inventory', "Deleted inventory item: {$itemName}");
@@ -475,13 +599,23 @@ class AdminController extends Controller
                 $packages->where('package_name', 'like', "%{$search}%")
                     ->orWhere('category', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhere('status', 'like', "%{$search}%");
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhereHas('inventoryItems', function ($items) use ($search) {
+                        $items->where('item_name', 'like', "%{$search}%")
+                            ->orWhere('category', 'like', "%{$search}%");
+                    });
             });
         }
 
+        $query->with('inventoryItems:id,item_name,unit,quantity');
         $packages = $query->latest()->paginate(10)->withQueryString();
         return Inertia::render('Admin/Packages', [
             'packages' => $packages,
+            'inventoryItems' => InventoryItem::orderBy('item_name')->get(['id', 'item_name', 'unit', 'quantity']),
+            'categories' => ReliefPackage::query()->select('category')->distinct()->pluck('category')
+                ->merge(InventoryItem::query()->select('category')->distinct()->pluck('category'))
+                ->filter(fn ($category) => is_string($category) && trim($category) !== '')
+                ->unique()->sort()->values(),
             'filters' => $request->only(['search']),
         ]);
     }
@@ -492,9 +626,20 @@ class AdminController extends Controller
             'package_name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'category' => ['required', 'string', 'max:60'],
-            'status' => ['required', 'string', 'max:20'],
+            'status' => ['required', 'in:Available,Not Available'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', 'exists:inventory_items,id'],
+            'items.*.quantity_per_package' => ['required', 'integer', 'min:1', 'max:4294967295'],
         ]);
-        $package = ReliefPackage::create($data);
+        $ingredients = collect($data['items'])->mapWithKeys(fn ($item) => [
+            $item['inventory_item_id'] => ['quantity_per_package' => $item['quantity_per_package']],
+        ])->all();
+        unset($data['items']);
+        $package = DB::transaction(function () use ($data, $ingredients) {
+            $package = ReliefPackage::create($data);
+            $package->inventoryItems()->sync($ingredients);
+            return $package;
+        });
         $this->logAudit('create', 'packages', "Created relief package: {$package->package_name}");
         return redirect()->route('admin.packages')->with('success', 'Relief package added successfully.');
     }
@@ -506,9 +651,19 @@ class AdminController extends Controller
             'package_name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'category' => ['required', 'string', 'max:60'],
-            'status' => ['required', 'string', 'max:20'],
+            'status' => ['required', 'in:Available,Not Available'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', 'exists:inventory_items,id'],
+            'items.*.quantity_per_package' => ['required', 'integer', 'min:1', 'max:4294967295'],
         ]);
-        $package->update($data);
+        $ingredients = collect($data['items'])->mapWithKeys(fn ($item) => [
+            $item['inventory_item_id'] => ['quantity_per_package' => $item['quantity_per_package']],
+        ])->all();
+        unset($data['items']);
+        DB::transaction(function () use ($package, $data, $ingredients) {
+            $package->update($data);
+            $package->inventoryItems()->sync($ingredients);
+        });
         $this->logAudit('update', 'packages', "Updated relief package: {$package->package_name}");
         return redirect()->route('admin.packages')->with('success', 'Relief package updated successfully.');
     }
@@ -524,7 +679,15 @@ class AdminController extends Controller
 
     public function distribution(Request $request)
     {
-        $query = Distribution::with(['beneficiary', 'reliefPackage']);
+        $query = Distribution::with([
+            'beneficiary:id,beneficiary_no,full_name',
+            'reliefPackage:id,package_name',
+        ]);
+        $canReleasePackages = $request->user()->canReleasePackages();
+        $canAssignDistributions = $request->user()->isAdmin();
+        if (! $canReleasePackages) {
+            $query->whereRaw('1 = 0');
+        }
         $search = trim((string) $request->input('search', ''));
 
         if ($search !== '') {
@@ -534,105 +697,319 @@ class AdminController extends Controller
                     ->orWhere('notes', 'like', $like)
                     ->orWhereHas('beneficiary', function ($beneficiaries) use ($like) {
                         $beneficiaries->where('full_name', 'like', $like)
-                            ->orWhere('beneficiary_no', 'like', $like);
+                            ->orWhere('beneficiary_no', 'like', $like)
+                            ->orWhere('contact_number', 'like', $like)
+                            ->orWhere('address', 'like', $like);
                     })
                     ->orWhereHas('reliefPackage', function ($packages) use ($like) {
-                        $packages->where('package_name', 'like', $like);
+                        $packages->where('package_name', 'like', $like)
+                            ->orWhere('category', 'like', $like)
+                            ->orWhere('description', 'like', $like);
                     });
+
+                if (ctype_digit($search)) {
+                    $distributions->orWhere('id', (int) $search);
+                }
+
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $search)) {
+                    $distributions->orWhereDate('date_released', $search);
+                }
             });
         }
 
         $distributions = $query->latest('date_released')->paginate(10)->withQueryString();
-        $beneficiaries = Beneficiary::where('status', 'Active')->orderBy('full_name')->get();
-        $packages = ReliefPackage::where('status', 'Available')->orderBy('package_name')->get();
+        $beneficiaries = $canAssignDistributions ? Beneficiary::where('status', 'Active')->orderBy('full_name')->get() : collect();
+        $packages = $canAssignDistributions
+            ? ReliefPackage::with('inventoryItems:id,item_name,unit,quantity')->where('status', 'Available')->orderBy('package_name')->get()->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)->values()
+            : collect();
         return Inertia::render('Admin/Distribution', [
             'distributions' => $distributions,
             'beneficiaries' => $beneficiaries,
             'packages' => $packages,
             'search' => $search,
             'today' => now()->format('Y-m-d'),
+            'canManageDistributions' => auth()->user()->isAdmin(),
+            'canAssignDistributions' => $canAssignDistributions,
+            'canReleasePackages' => $canReleasePackages,
         ]);
     }
 
-    public function storeDistribution(Request $request)
+    public function lookupBeneficiaryForCheckIn(Request $request)
     {
+        $validated = $request->validate(['code' => ['required', 'string', 'max:64']]);
+        $beneficiary = Beneficiary::query()
+            ->whereRaw('UPPER(beneficiary_no) = ?', [strtoupper(trim($validated['code']))])
+            ->where('status', 'Active')
+            ->first();
+
+        if (! $beneficiary) {
+            return response()->json(['success' => false, 'message' => 'No active beneficiary found for this QR code.'], 404);
+        }
+
+        $pendingDistributions = $beneficiary->distributions()
+            ->with('reliefPackage:id,package_name')
+            ->where('status', 'Pending')
+            ->orderBy('date_released')
+            ->get()
+            ->map(fn (Distribution $distribution) => [
+                'id' => $distribution->id,
+                'package_name' => $distribution->reliefPackage?->package_name ?? 'Relief package',
+                'assigned_date' => $distribution->date_released?->format('Y-m-d'),
+            ])
+            ->values();
+        $releasedToday = $beneficiary->distributions()
+            ->with('reliefPackage:id,package_name')
+            ->where('status', 'Released')
+            ->whereDate('date_released', today())
+            ->latest('date_released')
+            ->get()
+            ->map(fn (Distribution $distribution) => $distribution->reliefPackage?->package_name ?? 'Relief package')
+            ->unique()
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $beneficiary->only(['id', 'full_name', 'beneficiary_no', 'household_size', 'priority_type', 'status']) + [
+                'pending_distributions' => $pendingDistributions,
+                'released_today' => $releasedToday,
+            ],
+        ]);
+    }
+
+    public function offlineAssignments()
+    {
+        $assignments = Beneficiary::query()
+            ->where('status', 'Active')
+            ->whereHas('distributions', fn ($query) => $query->where('status', 'Pending'))
+            ->with(['distributions' => fn ($query) => $query
+                ->with('reliefPackage:id,package_name')
+                ->where('status', 'Pending')
+                ->orderBy('date_released')])
+            ->orderBy('beneficiary_no')
+            ->get(['id', 'beneficiary_no', 'full_name'])
+            ->flatMap(fn (Beneficiary $beneficiary) => $beneficiary->distributions->map(fn (Distribution $distribution) => [
+                'beneficiary_no' => $beneficiary->beneficiary_no,
+                'full_name' => $beneficiary->full_name,
+                'distribution_id' => $distribution->id,
+                'package_name' => $distribution->reliefPackage?->package_name ?? 'Relief package',
+                'assigned_date' => $distribution->date_released?->format('Y-m-d'),
+            ]))
+            ->values();
+
+        return response()->json(['data' => $assignments, 'prepared_at' => now()->toIso8601String()]);
+    }
+
+    public function syncOfflineClaims(Request $request, DistributionStockService $stock)
+    {
+        $validated = $request->validate([
+            'claims' => ['required', 'array', 'min:1', 'max:200'],
+            'claims.*.beneficiary_no' => ['required', 'string', 'max:64'],
+            'claims.*.distribution_id' => ['required', 'integer', 'exists:distributions,id'],
+            'claims.*.offline_claim_id' => ['required', 'uuid'],
+        ]);
+        $results = [];
+
+        foreach ($validated['claims'] as $claim) {
+            $beneficiary = Beneficiary::query()
+                ->whereRaw('UPPER(beneficiary_no) = ?', [strtoupper(trim($claim['beneficiary_no']))])
+                ->where('status', 'Active')
+                ->first();
+
+            if (! $beneficiary) {
+                $results[] = ['distribution_id' => $claim['distribution_id'], 'success' => false, 'message' => 'Beneficiary is missing or inactive. Staff review is required.'];
+                continue;
+            }
+
+            try {
+                [$distribution, $alreadySynced] = DB::transaction(function () use ($claim, $beneficiary, $request, $stock) {
+                    Beneficiary::query()->lockForUpdate()->findOrFail($beneficiary->id);
+                    $distribution = Distribution::query()
+                        ->whereKey($claim['distribution_id'])
+                        ->where('beneficiary_id', $beneficiary->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $distribution) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'claim' => 'Assignment could not be found for this beneficiary. Staff review is required.',
+                        ]);
+                    }
+
+                    if ($distribution->status === 'Released') {
+                        if ($distribution->offline_claim_id === $claim['offline_claim_id'] && (int) $distribution->distributed_by === (int) $request->user()->id) {
+                            return [$distribution->load(['beneficiary', 'reliefPackage']), true];
+                        }
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'claim' => 'Assignment is no longer pending. It may have been claimed already; check the distribution record.',
+                        ]);
+                    }
+
+                    if ($distribution->status !== 'Pending') {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'claim' => 'Assignment is no longer pending. Staff review is required.',
+                        ]);
+                    }
+
+                    $distribution->update([
+                        'status' => 'Released',
+                        'date_released' => now(),
+                        'distributed_by' => $request->user()->id,
+                        'offline_claim_id' => $claim['offline_claim_id'],
+                    ]);
+                    $stock->consumeFor($distribution);
+
+                    return [$distribution->load(['beneficiary', 'reliefPackage']), false];
+                });
+
+                if (! $alreadySynced) {
+                    $this->logAudit('release', 'distribution', "Synced offline release of {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name}");
+                }
+                $results[] = ['distribution_id' => $distribution->id, 'success' => true, 'message' => 'Claim synced and confirmed.'];
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                $results[] = [
+                    'distribution_id' => $claim['distribution_id'],
+                    'success' => false,
+                    'message' => collect($exception->errors())->flatten()->first() ?? 'Could not sync this claim. Staff review is required.',
+                ];
+            }
+        }
+
+        return response()->json(['results' => $results]);
+    }
+
+    public function releasePendingDistribution(Request $request, DistributionStockService $stock)
+    {
+        $validated = $request->validate([
+            'beneficiary_no' => ['required', 'string', 'max:64'],
+            'distribution_id' => ['required', 'integer', 'exists:distributions,id'],
+        ]);
+        $beneficiary = Beneficiary::query()
+            ->whereRaw('UPPER(beneficiary_no) = ?', [strtoupper(trim($validated['beneficiary_no']))])
+            ->where('status', 'Active')
+            ->firstOrFail();
+
+        $distribution = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
+            $distribution = Distribution::query()
+                ->whereKey($validated['distribution_id'])
+                ->where('beneficiary_id', $beneficiary->id)
+                ->where('status', 'Pending')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $distribution) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'distribution_id' => 'This pending package assignment is no longer available. Refresh and scan again.',
+                ]);
+            }
+
+            $distribution->update([
+                'status' => 'Released',
+                'date_released' => now(),
+                'distributed_by' => $request->user()->id,
+            ]);
+            $stock->consumeFor($distribution);
+
+            return $distribution->load(['beneficiary', 'reliefPackage']);
+        });
+
+        $this->logAudit('release', 'distribution', "Released {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name} after QR scan");
+
+        return redirect()->back()->with('success', "{$distribution->reliefPackage?->package_name} released to {$beneficiary->full_name}.");
+    }
+
+    public function storeDistribution(Request $request, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
+    {
+        $mode = $request->input('recipient_mode', 'individual');
+        $request->merge(['recipient_mode' => $mode]);
         $data = $request->validate([
-            'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
+            'recipient_mode' => ['required', 'in:individual,all,priority'],
+            'beneficiary_id' => ['nullable', 'required_if:recipient_mode,individual', 'exists:beneficiaries,id'],
+            'priority_type' => ['nullable', 'required_if:recipient_mode,priority', 'in:Senior Citizen,PWD,Solo Parent'],
             'package_id' => ['required', 'exists:relief_packages,id'],
             'date_released' => ['required', 'date'],
-            'status' => ['required', 'string', 'max:20'],
+            'status' => ['required', 'in:Released,Pending'],
             'notes' => ['nullable', 'string'],
         ]);
-        $data['distributed_by'] = auth()->id();
-        $distribution = Distribution::create($data);
-        $this->markPackageReceived($distribution);
-        
-        $beneficiary = Beneficiary::find($data['beneficiary_id']);
+        $recipients = $mode === 'individual'
+            ? Beneficiary::where('status', 'Active')->whereKey($data['beneficiary_id'])->get()
+            : Beneficiary::where('status', 'Active')
+                ->when($mode === 'priority', fn ($query) => $query->where('priority_type', $data['priority_type']))
+                ->orderBy('id')->get();
+
+        if ($recipients->isEmpty()) {
+            return back()->withErrors(['recipient_mode' => 'There are no active beneficiaries in this selection.'])->withInput();
+        }
+
+        $distributionData = collect($data)->except(['recipient_mode', 'beneficiary_id', 'priority_type'])->all();
+        $distributionData['distributed_by'] = auth()->id();
+        $createdDistributions = DB::transaction(function () use ($recipients, $distributionData, $stock) {
+            $created = collect();
+            foreach ($recipients as $beneficiary) {
+                $distribution = Distribution::create($distributionData + ['beneficiary_id' => $beneficiary->id]);
+                $stock->consumeFor($distribution);
+                $created->push($distribution);
+            }
+            return $created;
+        });
+        $createdCount = $createdDistributions->count();
+        if ($data['status'] === 'Pending') {
+            $notifications->notifyPendingAssignments($createdDistributions);
+        }
+
         $package = ReliefPackage::find($data['package_id']);
-        $this->logAudit('create', 'distribution', "Recorded distribution: {$package->package_name} to {$beneficiary->full_name}");
+        $recipientDescription = match ($mode) {
+            'all' => 'all active beneficiaries',
+            'priority' => "active beneficiaries in {$data['priority_type']} group",
+            default => $recipients->first()->full_name,
+        };
+        $this->logAudit('create', 'distribution', "Recorded {$createdCount} {$package->package_name} distribution(s) for {$recipientDescription}");
 
         if ($request->header('X-Inertia')) {
-            return redirect()->back()->with('success', 'Distribution recorded successfully.');
+            return redirect()->back()->with('success', "{$createdCount} distribution record(s) created successfully.");
         }
 
         if ($request->ajax() && !$request->header('X-Inertia')) {
-            return response()->json(['success' => true, 'message' => 'Distribution recorded successfully.']);
+            return response()->json(['success' => true, 'message' => "{$createdCount} distribution record(s) created successfully."]);
         }
 
-        return redirect()->route('admin.distribution')->with('success', 'Distribution recorded successfully.');
+        return redirect()->route('admin.distribution')->with('success', "{$createdCount} distribution record(s) created successfully.");
     }
 
-    public function updateDistribution(Request $request, $id)
+    public function updateDistribution(Request $request, $id, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
     {
-        $distribution = Distribution::findOrFail($id);
-        $wasReceived = $distribution->status === 'Released';
-        $oldPackageId = $distribution->package_id;
+        $distribution = Distribution::with('inventoryItems')->findOrFail($id);
         $data = $request->validate([
             'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
             'package_id' => ['required', 'exists:relief_packages,id'],
             'date_released' => ['required', 'date'],
-            'status' => ['required', 'string', 'max:20'],
+            'status' => ['required', 'in:Released,Pending'],
             'notes' => ['nullable', 'string'],
         ]);
-        $distribution->update($data);
-        $this->markPackageReceived($distribution);
-        if ($wasReceived && ($distribution->status !== 'Released' || $oldPackageId !== $distribution->package_id)) {
-            $this->restorePackageAvailability($oldPackageId);
+        $wasPending = $distribution->status === 'Pending';
+        $beneficiaryChanged = (int) $distribution->beneficiary_id !== (int) $data['beneficiary_id'];
+        $packageChanged = (int) $distribution->package_id !== (int) $data['package_id'];
+        $dateChanged = $distribution->date_released?->toDateString() !== $data['date_released'];
+        DB::transaction(function () use ($distribution, $data, $stock) {
+            $stock->restoreFor($distribution);
+            $distribution->update($data);
+            $stock->consumeFor($distribution);
+        });
+        if ($distribution->status === 'Pending' && (! $wasPending || $beneficiaryChanged || $packageChanged || $dateChanged)) {
+            $notifications->notifyPendingAssignments([$distribution->load(['beneficiary', 'reliefPackage'])]);
         }
         $this->logAudit('update', 'distribution', "Updated distribution record ID: {$id}");
         return redirect()->route('admin.distribution')->with('success', 'Distribution updated successfully.');
     }
 
-    public function deleteDistribution($id)
+    public function deleteDistribution($id, DistributionStockService $stock)
     {
-        $distribution = Distribution::findOrFail($id);
-        $wasReceived = $distribution->status === 'Released';
-        $packageId = $distribution->package_id;
-        $distribution->delete();
-        if ($wasReceived) {
-            $this->restorePackageAvailability($packageId);
-        }
+        $distribution = Distribution::with('inventoryItems')->findOrFail($id);
+        DB::transaction(function () use ($distribution, $stock) {
+            $stock->restoreFor($distribution);
+            $distribution->delete();
+        });
         $this->logAudit('delete', 'distribution', "Deleted distribution record ID: {$id}");
         return redirect()->route('admin.distribution')->with('success', 'Distribution deleted successfully.');
-    }
-
-    // A "Released" distribution means the beneficiary received the package,
-    // so it leaves the available list; moving back to Pending (or deleting the
-    // record) restores availability only when no other released record uses it.
-    protected function markPackageReceived(Distribution $distribution)
-    {
-        if ($distribution->status === 'Released' && $distribution->package_id) {
-            ReliefPackage::where('id', $distribution->package_id)->update(['status' => 'Not Available']);
-        }
-    }
-
-    protected function restorePackageAvailability($packageId)
-    {
-        if (!$packageId) return;
-        $stillReleased = Distribution::where('package_id', $packageId)->where('status', 'Released')->exists();
-        if (!$stillReleased) {
-            ReliefPackage::where('id', $packageId)->update(['status' => 'Available']);
-        }
     }
 
     public function qrCodes(Request $request)
@@ -992,9 +1369,6 @@ class AdminController extends Controller
                 'barangay_name' => ['required', 'string', 'max:255'],
                 'municipality' => ['required', 'string', 'max:255'],
                 'province' => ['required', 'string', 'max:255'],
-                'notifications_enabled' => ['boolean'],
-                'auto_backup_enabled' => ['boolean'],
-                'session_timeout' => ['required', 'integer', 'min:5', 'max:1440'],
             ]);
 
             // Save general settings
@@ -1008,12 +1382,7 @@ class AdminController extends Controller
             Setting::set('municipality', $request->municipality, 'string', 'location', 'Municipality name');
             Setting::set('province', $request->province, 'string', 'location', 'Province name');
             
-            // Save system settings
-            Setting::set('notifications_enabled', $request->boolean('notifications_enabled'), 'boolean', 'system', 'Enable system notifications');
-            Setting::set('auto_backup_enabled', $request->boolean('auto_backup_enabled'), 'boolean', 'system', 'Enable automatic backups');
-            Setting::set('session_timeout', $request->session_timeout, 'integer', 'system', 'Session timeout in minutes');
-
-            $this->logAudit('update', 'settings', 'Updated system settings');
+            $this->logAudit('update', 'settings', 'Updated site and location settings');
             return redirect()->route('admin.settings')->with('success', 'Settings updated successfully.');
         }
 
@@ -1026,9 +1395,6 @@ class AdminController extends Controller
             'barangay_name' => Setting::get('barangay_name', 'Barangay Name'),
             'municipality' => Setting::get('municipality', 'Municipality'),
             'province' => Setting::get('province', 'Province'),
-            'notifications_enabled' => Setting::get('notifications_enabled', true),
-            'auto_backup_enabled' => Setting::get('auto_backup_enabled', false),
-            'session_timeout' => Setting::get('session_timeout', 30),
         ];
 
         return Inertia::render('Admin/Settings', compact('settings'));
@@ -1042,9 +1408,6 @@ class AdminController extends Controller
             ['barangay_name', 'Barangay Name', 'string', 'location', 'Barangay name'],
             ['municipality', 'Municipality', 'string', 'location', 'Municipality name'],
             ['province', 'Province', 'string', 'location', 'Province name'],
-            ['notifications_enabled', '1', 'boolean', 'system', 'Enable system notifications'],
-            ['auto_backup_enabled', '0', 'boolean', 'system', 'Enable automatic backups'],
-            ['session_timeout', '30', 'integer', 'system', 'Session timeout in minutes'],
         ];
 
         foreach ($defaults as [$key, $value, $type, $group, $description]) {
@@ -1074,8 +1437,8 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'role' => ['required', 'string', 'in:admin,user'],
+            'password' => ['required', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
+            'role' => ['required', 'string', 'in:admin,staff,volunteer'],
         ]);
 
         $data['password'] = bcrypt($data['password']);
@@ -1083,9 +1446,9 @@ class AdminController extends Controller
         
         $user = User::create($data);
         
-        $this->logAudit('create', 'users', "Created admin account for: {$user->name}");
+        $this->logAudit('create', 'users', "Created {$user->role} account for: {$user->name}");
         
-        return redirect()->route('admin.users')->with('success', 'Admin account created successfully.');
+        return redirect()->route('admin.users')->with('success', ucfirst($user->role) . ' account created successfully.');
     }
 
     private function generateSecurePassword()
@@ -1129,9 +1492,9 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $id],
-            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'password' => ['nullable', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
             'beneficiary_id' => ['nullable', 'exists:beneficiaries,id'],
-            'role' => ['required', 'string', 'in:admin,user'],
+            'role' => ['required', 'string', 'in:admin,staff,volunteer,user'],
         ]);
 
         if (!empty($data['password'])) {

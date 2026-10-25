@@ -17,7 +17,7 @@ class StoreDistributionRequest extends FormRequest
             'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
             'package_id' => ['required', 'exists:relief_packages,id'],
             'date_released' => ['required', 'date'],
-            'status' => ['required', 'string', 'max:20'],
+            'status' => ['required', 'in:Pending,Released'],
             'notes' => ['nullable', 'string'],
         ];
     }

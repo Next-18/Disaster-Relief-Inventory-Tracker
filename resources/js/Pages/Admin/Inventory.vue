@@ -12,7 +12,10 @@ const props = defineProps({
     totalInventoryItems: { type: Number, required: true },
     lowStockCount: { type: Number, required: true },
     categoryCount: { type: Number, required: true },
+    categories: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({}) },
+    canManageInventory: { type: Boolean, default: false },
+    canUpdateStock: { type: Boolean, default: false },
 });
 
 const page = usePage();
@@ -24,11 +27,22 @@ const filters = reactive({
 });
 const modal = ref(null);
 const editingId = ref(null);
+const selectedCategory = ref('');
 const form = useForm({ item_name: '', category: '', quantity: 0, unit: 'pcs', minimum_stock: 0 });
+const stockForm = useForm({ quantity: 0, issue_type: 'stock-count', details: '' });
+const stockModal = ref(null);
+const stockItem = ref(null);
 let searchTimer;
 let lastSubmittedSearch = filters.search.trim();
 
 const rows = computed(() => props.items.data ?? []);
+const categoryOptions = computed(() => [...new Set(['Food', 'Medical', 'Hygiene', 'Clothing', 'Shelter', ...props.categories])].filter(Boolean).sort());
+
+function chooseCategory(value) {
+    selectedCategory.value = value;
+    if (value !== '__other__') form.category = value;
+    else form.category = '';
+}
 
 function visitFilters({ replace = false } = {}) {
     lastSubmittedSearch = filters.search.trim();
@@ -68,6 +82,7 @@ function openAddModal() {
     editingId.value = null;
     form.reset();
     form.clearErrors();
+    selectedCategory.value = '';
     modal.value?.showModal();
 }
 
@@ -76,6 +91,7 @@ function openEditModal(item) {
     form.clearErrors();
     form.item_name = item.item_name;
     form.category = item.category;
+    selectedCategory.value = categoryOptions.value.includes(item.category) ? item.category : '__other__';
     form.quantity = item.quantity;
     form.unit = item.unit;
     form.minimum_stock = item.minimum_stock;
@@ -93,6 +109,23 @@ function deleteItem(item) {
     router.delete(routes.value.inventoryDelete.replace('__ID__', encodeURIComponent(item.id)), { preserveScroll: true });
 }
 
+function openStockModal(item) {
+    stockItem.value = item;
+    stockForm.reset();
+    stockForm.clearErrors();
+    stockForm.quantity = Number(item.quantity);
+    stockForm.issue_type = 'stock-count';
+    stockModal.value?.showModal();
+}
+
+function saveStockAdjustment() {
+    if (!stockItem.value) return;
+    stockForm.post(routes.value.inventoryAdjustStock.replace('__ID__', encodeURIComponent(stockItem.value.id)), {
+        preserveScroll: true,
+        onSuccess: () => stockModal.value?.close(),
+    });
+}
+
 function formatDate(value) {
     return value ? new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 }
@@ -100,8 +133,8 @@ function formatDate(value) {
 
 <template>
     <section class="module-heading">
-        <div><h2>Relief inventory</h2><p>Monitor available supplies and minimum stock levels.</p></div>
-        <button class="add-button" type="button" @click="openAddModal"><span>+</span> Add item</button>
+        <div><h2>Relief inventory</h2><p v-if="canManageInventory">Monitor available supplies and minimum stock levels.</p><p v-else>Check quantities and report stock changes, damaged goods, or expired supplies for administrator review.</p></div>
+        <button v-if="canManageInventory" class="add-button" type="button" @click="openAddModal"><span>+</span> Add item</button>
     </section>
 
     <div class="inventory-summary"><div><small>Stock records</small><b>{{ Number(totalInventoryItems).toLocaleString() }}</b></div><div><small>Low stock records</small><b>{{ Number(lowStockCount).toLocaleString() }}</b></div><div><small>Categories</small><b>{{ Number(categoryCount).toLocaleString() }}</b></div></div>
@@ -118,7 +151,7 @@ function formatDate(value) {
             </form>
         </div>
         <div class="table-wrap"><table class="record-table">
-            <thead><tr><th>ITEM</th><th>CATEGORY</th><th>AVAILABLE STOCK</th><th>MINIMUM</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+            <thead><tr><th>ITEM</th><th>CATEGORY</th><th>AVAILABLE STOCK</th><th>MINIMUM</th><th>STATUS</th><th>{{ canUpdateStock ? 'ACTIONS' : 'STATUS' }}</th></tr></thead>
             <tbody>
                 <tr v-for="item in rows" :key="item.id" :class="{ 'inventory-row-low': item.status === 'Low Stock' }">
                     <td><b>{{ item.item_name }}</b><small>Last updated {{ formatDate(item.updated_at) }}</small></td>
@@ -126,7 +159,11 @@ function formatDate(value) {
                     <td><b>{{ item.quantity }}</b> {{ item.unit }}</td>
                     <td>{{ item.minimum_stock }} {{ item.unit }}</td>
                     <td><span class="tag" :class="item.status === 'Low Stock' ? 'warning' : 'success'">{{ item.status }}</span></td>
-                    <td><div class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(item)">Edit</button><button type="button" class="action-btn delete" @click="deleteItem(item)">Delete</button></div></td>
+                    <td>
+                        <div v-if="canManageInventory" class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(item)">Edit</button><button type="button" class="action-btn delete" @click="deleteItem(item)">Delete</button></div>
+                        <button v-else-if="canUpdateStock" type="button" class="action-btn" @click="openStockModal(item)">Update stock / report issue</button>
+                        <span v-else>View only</span>
+                    </td>
                 </tr>
                 <tr v-if="!rows.length"><td colspan="6" class="empty-cell">{{ filters.search || filters.stock_status !== 'all' ? 'No inventory items match these filters.' : 'No inventory items yet.' }} <button v-if="filters.search || filters.stock_status !== 'all'" type="button" class="filter-clear" @click="filters.search = ''; filters.stock_status = 'all'; visitFilters()">Clear filters</button></td></tr>
             </tbody>
@@ -134,14 +171,24 @@ function formatDate(value) {
         <InertiaPagination :links="items.links" :show="items.last_page > 1" />
     </section>
 
-    <AdminModal ref="modal" class="form-modal" @click.self="modal?.close()">
+    <AdminModal v-if="canManageInventory" ref="modal" class="form-modal" @click.self="modal?.close()">
         <div class="modal-title"><div><h3>{{ editingId ? 'Edit inventory item' : 'Add inventory item' }}</h3><p>{{ editingId ? 'Update inventory item information.' : 'Enter a supply item and its stock level.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="modal?.close()">×</button></div>
         <form @submit.prevent="saveItem">
             <label>Item name<input v-model="form.item_name" maxlength="255" placeholder="e.g. Rice" required :class="{ 'input-error': form.errors.item_name }"><small v-if="form.errors.item_name" class="field-error">{{ form.errors.item_name }}</small></label>
-            <label>Category<input v-model="form.category" maxlength="60" placeholder="e.g. Food supplies" required><small v-if="form.errors.category" class="field-error">{{ form.errors.category }}</small></label>
+            <label>Category<select :value="selectedCategory" required @change="chooseCategory($event.target.value)"><option value="" disabled>Choose a category</option><option v-for="category in categoryOptions" :key="category" :value="category">{{ category }}</option><option value="__other__">Other (enter category)</option></select><input v-if="selectedCategory === '__other__'" v-model="form.category" maxlength="60" placeholder="Enter a new category" required><small v-if="form.errors.category" class="field-error">{{ form.errors.category }}</small></label>
             <div class="form-row"><label>Quantity<input v-model.number="form.quantity" type="number" min="0" max="4294967295" step="1" required><small v-if="form.errors.quantity" class="field-error">{{ form.errors.quantity }}</small></label><label>Unit<input v-model="form.unit" maxlength="30" placeholder="e.g. bags" required><small v-if="form.errors.unit" class="field-error">{{ form.errors.unit }}</small></label></div>
             <label>Minimum stock level<input v-model.number="form.minimum_stock" type="number" min="0" max="4294967295" step="1" required><small v-if="form.errors.minimum_stock" class="field-error">{{ form.errors.minimum_stock }}</small></label>
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update item' : 'Save item' }}</button></div>
+        </form>
+    </AdminModal>
+
+    <AdminModal v-if="canUpdateStock && !canManageInventory" ref="stockModal" class="form-modal" @click.self="stockModal?.close()">
+        <div class="modal-title"><div><h3>Update stock or report an issue</h3><p>{{ stockItem?.item_name }} · Current stock: {{ stockItem?.quantity }} {{ stockItem?.unit }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="stockModal?.close()">×</button></div>
+        <form @submit.prevent="saveStockAdjustment">
+            <label>Counted quantity<input v-model.number="stockForm.quantity" type="number" min="0" max="4294967295" step="1" required><small v-if="stockForm.errors.quantity" class="field-error">{{ stockForm.errors.quantity }}</small></label>
+            <label>Reason<select v-model="stockForm.issue_type" required><option value="stock-count">Stock count correction</option><option value="received">New stock received</option><option value="damaged">Damaged goods</option><option value="expired">Expired goods</option><option value="other">Other inventory issue</option></select><small v-if="stockForm.errors.issue_type" class="field-error">{{ stockForm.errors.issue_type }}</small></label>
+            <label>Details for administrator<textarea v-model="stockForm.details" rows="3" minlength="5" maxlength="500" placeholder="Describe what was counted or what happened" required/><small v-if="stockForm.errors.details" class="field-error">{{ stockForm.errors.details }}</small></label>
+            <div class="modal-actions"><button type="button" class="cancel-button" :disabled="stockForm.processing" @click="stockModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="stockForm.processing">{{ stockForm.processing ? 'Saving…' : 'Save update' }}</button></div>
         </form>
     </AdminModal>
 </template>

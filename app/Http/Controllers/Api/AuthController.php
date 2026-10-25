@@ -2,11 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Beneficiary;
-use App\Models\User;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Password;
@@ -16,88 +13,10 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
-        $validated = $request->validate([
-            'full_name' => ['required', 'string', 'max:255'],
-            'address' => ['required', 'string', 'max:255'],
-        ]);
-
-        $registration = DB::transaction(function () use ($validated) {
-            $beneficiary = Beneficiary::create([
-                'beneficiary_no' => 'TEMP-' . Str::random(20),
-                'full_name' => trim($validated['full_name']),
-                'address' => trim($validated['address']),
-                'priority_type' => 'Regular',
-                'status' => 'Active',
-            ]);
-
-            // Generate unique beneficiary number
-            $beneficiaryNo = null;
-            $maxAttempts = 100;
-            $attempts = 0;
-
-            do {
-                $beneficiaryNo = 'BEN-' . str_pad((string) ($beneficiary->id + 1000 + $attempts), 4, '0', STR_PAD_LEFT);
-                $attempts++;
-
-                // Check if beneficiary number exists in beneficiaries table
-                $existsInBeneficiaries = Beneficiary::where('beneficiary_no', $beneficiaryNo)->exists();
-                // Check if beneficiary number exists in users table (as email)
-                $existsInUsers = User::where('email', $beneficiaryNo)->exists();
-
-                if (!$existsInBeneficiaries && !$existsInUsers) {
-                    break;
-                }
-            } while ($attempts < $maxAttempts);
-
-            if ($attempts >= $maxAttempts) {
-                throw new \Exception('Could not generate a unique beneficiary number.');
-            }
-
-            $beneficiary->update([
-                'beneficiary_no' => $beneficiaryNo,
-            ]);
-
-            $tempPassword = $this->generateTemporaryPassword();
-
-            $user = User::create([
-                'name' => $beneficiary->full_name,
-                'email' => $beneficiary->beneficiary_no,
-                'password' => $tempPassword,
-                'beneficiary_id' => $beneficiary->id,
-                'role' => 'user',
-                'password_changed' => false,
-            ]);
-
-            return compact('beneficiary', 'user', 'tempPassword');
-        });
-
         return response()->json([
-            'success' => true,
-            'message' => 'Registration successful. Give the beneficiary this temporary password: ' . $registration['tempPassword'],
-            'data' => [
-                'beneficiary' => [
-                    'id' => $registration['beneficiary']->id,
-                    'beneficiary_no' => $registration['beneficiary']->beneficiary_no,
-                    'full_name' => $registration['beneficiary']->full_name,
-                    'address' => $registration['beneficiary']->address,
-                ],
-                'user' => [
-                    'id' => $registration['user']->id,
-                    'name' => $registration['user']->name,
-                ],
-                'temporary_password' => $registration['tempPassword'],
-            ],
-        ], 201);
-    }
-
-    private function generateTemporaryPassword()
-    {
-        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-        $password = '';
-        for ($i = 0; $i < 6; $i++) {
-            $password .= $chars[random_int(0, strlen($chars) - 1)];
-        }
-        return $password;
+            'success' => false,
+            'message' => 'Beneficiary accounts must be created or verified by an administrator.',
+        ], 403);
     }
     public function login(Request $request)
     {
@@ -106,9 +25,12 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $beneficiaryNo = Str::upper(trim($validated['beneficiary_no']));
+        $identifier = trim($validated['beneficiary_no']);
+        if (! filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            $identifier = Str::upper($identifier);
+        }
         if (!Auth::attempt([
-            'email' => $beneficiaryNo,
+            'email' => $identifier,
             'password' => $validated['password'],
         ])) {
             throw ValidationException::withMessages([
@@ -117,10 +39,10 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
-        if (!$user || $user->role !== 'user' || !$user->beneficiary_id) {
+        if (!$user || (! $user->canRecordDistributions() && ($user->role !== 'user' || ! $user->beneficiary_id))) {
             Auth::logout();
             throw ValidationException::withMessages([
-                'beneficiary_no' => ['This sign-in is for beneficiary accounts.'],
+                'beneficiary_no' => ['This account is not permitted to sign in through the mobile app.'],
             ]);
         }
 
@@ -136,6 +58,7 @@ class AuthController extends Controller
                     'email' => $user->email,
                     'beneficiary_no' => $user->email,
                     'password_changed' => (bool) $user->password_changed,
+                    'role' => $user->role,
                 ],
                 'token' => $token,
                 'token_type' => 'Bearer',
@@ -164,6 +87,7 @@ class AuthController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'role' => $user->role,
                 ],
             ],
         ]);
@@ -173,7 +97,7 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password' => ['required', 'string', 'min:6', 'confirmed'],
+            'new_password' => ['required', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
         ]);
 
         $user = $request->user();
@@ -187,6 +111,11 @@ class AuthController extends Controller
         $user->password = $validated['new_password'];
         $user->password_changed = true;
         $user->save();
+
+        $currentTokenId = $user->currentAccessToken()?->getKey();
+        $user->tokens()
+            ->when($currentTokenId, fn ($tokens) => $tokens->where('id', '!=', $currentTokenId))
+            ->delete();
 
         return response()->json([
             'success' => true,

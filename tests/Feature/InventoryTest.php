@@ -14,7 +14,7 @@ class InventoryTest extends TestCase
 
     public function test_inventory_search_and_stock_filter_use_quantity_thresholds_and_global_summaries(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         InventoryItem::create([
             'item_name' => 'Rice kits',
@@ -52,7 +52,7 @@ class InventoryTest extends TestCase
 
     public function test_create_and_update_recalculate_stock_status_from_the_threshold(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         $this->post(route('admin.inventory.store'), [
             'item_name' => 'First aid kits',
@@ -79,7 +79,7 @@ class InventoryTest extends TestCase
 
     public function test_invalid_edit_returns_field_validation_errors_for_the_inertia_form(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
         $item = InventoryItem::create([
             'item_name' => 'Blankets',
             'category' => 'Shelter',
@@ -107,7 +107,7 @@ class InventoryTest extends TestCase
 
     public function test_inventory_pagination_is_available_and_out_of_range_pages_are_corrected(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         for ($index = 1; $index <= 12; $index++) {
             InventoryItem::create([

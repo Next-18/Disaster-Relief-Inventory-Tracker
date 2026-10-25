@@ -18,7 +18,7 @@ const form = useForm({
     email: '',
     password: '',
     password_confirmation: '',
-    role: 'admin',
+    role: 'staff',
 });
 
 const editingId = ref(null);
@@ -79,20 +79,12 @@ function openCreateModal() {
         <section class="module-heading">
             <div>
                 <h2>User accounts</h2>
-                <p>Manage admin accounts. Beneficiaries can create their own accounts using their beneficiary number.</p>
+                <p>Manage administrator, staff, and volunteer accounts. Beneficiaries can create their own accounts using their beneficiary number.</p>
             </div>
             <button class="add-button" type="button" @click="openCreateModal">
-                <span>+</span> Add admin
+                <span>+</span> Add team account
             </button>
         </section>
-
-        <div v-if="$page.props.flash.success" class="flash-success">
-            {{ $page.props.flash.success }}
-        </div>
-
-        <div v-if="$page.props.flash.error" class="flash-error">
-            {{ $page.props.flash.error }}
-        </div>
 
         <div class="panel-heading">
             <div>
@@ -109,6 +101,7 @@ function openCreateModal() {
                         <th>USERNAME</th>
                         <th>ROLE</th>
                         <th>BENEFICIARY</th>
+                        <th>STATUS</th>
                         <th>ACTIONS</th>
                     </tr>
                 </thead>
@@ -152,7 +145,7 @@ function openCreateModal() {
                         </td>
                     </tr>
                     <tr v-if="users.data.length === 0">
-                        <td colspan="5" class="empty-cell">No user accounts yet.</td>
+                        <td colspan="6" class="empty-cell">No user accounts yet.</td>
                     </tr>
                 </tbody>
             </table>
@@ -163,23 +156,28 @@ function openCreateModal() {
 
     <dialog class="form-modal" id="user-modal">
         <div class="modal-title">
-            <h3>{{ editingId ? 'Edit admin account' : 'Add admin account' }}</h3>
-            <p>{{ editingId ? 'Update admin account information.' : 'Create a new admin account for system management.' }}</p>
+            <h3>{{ editingId ? 'Edit user account' : 'Add team account' }}</h3>
+            <p>{{ editingId ? 'Update account information and role.' : 'Staff can release packages. Volunteers can scan and verify beneficiaries.' }}</p>
         </div>
         <form @submit.prevent="editingId ? updateUser() : createUser()">
             <label>Full name
-                <input v-model="form.name" type="text" required placeholder="Enter full name">
+                <input v-model="form.name" type="text" required placeholder="Enter full name" :class="{ 'input-error': form.errors.name }">
+                <small v-if="form.errors.name" class="field-error">{{ form.errors.name }}</small>
             </label>
             <label>Email address
-                <input v-model="form.email" type="email" required placeholder="Enter email address">
+                <input v-model="form.email" type="email" required placeholder="Enter email address" :class="{ 'input-error': form.errors.email }">
+                <small v-if="form.errors.email" class="field-error">{{ form.errors.email }}</small>
             </label>
             <label>Password
                 <input 
                     v-model="form.password" 
                     type="password" 
+                    minlength="12"
                     :required="!editingId" 
-                    placeholder="Enter password (min 8 characters)"
+                    placeholder="Enter password (12+ characters, mixed case and a number)"
+                    :class="{ 'input-error': form.errors.password }"
                 >
+                <small v-if="form.errors.password" class="field-error">{{ form.errors.password }}</small>
             </label>
             <label>Confirm password
                 <input 
@@ -187,7 +185,17 @@ function openCreateModal() {
                     type="password" 
                     :required="!editingId" 
                     placeholder="Confirm password"
+                    :class="{ 'input-error': form.errors.password }"
                 >
+            </label>
+            <label>Role
+                <select v-model="form.role" required :class="{ 'input-error': form.errors.role }">
+                    <option value="admin">Administrator</option>
+                    <option value="staff">Staff — release packages and record distributions</option>
+                    <option value="volunteer">Volunteer — scan and verify beneficiaries</option>
+                    <option v-if="editingId && form.role === 'user'" value="user">Beneficiary</option>
+                </select>
+                <small v-if="form.errors.role" class="field-error">{{ form.errors.role }}</small>
             </label>
             <div class="modal-actions">
                 <button type="button" class="cancel-button" @click="closeModal">Cancel</button>
