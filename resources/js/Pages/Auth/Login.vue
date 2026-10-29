@@ -7,6 +7,7 @@ const routes = computed(() => page.props.routeUrls ?? {});
 const form = useForm({ email: '', password: '', remember: false });
 const passwordVisible = ref(false);
 const firstError = computed(() => Object.values(form.errors)[0] ?? '');
+const successMessage = computed(() => page.props.flash?.success ?? '');
 
 function submit() {
     form.post(routes.value.loginAttempt, { replace: true, onFinish: () => form.reset('password') });
@@ -25,11 +26,12 @@ function submit() {
             </aside>
             <section class="form-panel">
                 <h2>Admin / Staff Login</h2>
-                <p class="intro">Use your barangay-issued account. Beneficiaries can <a :href="routes.register">register here</a>.</p>
+                <p class="intro">Admins and staff sign in here with their work credentials. Beneficiaries should sign in through the mobile app.</p>
+                <div v-if="successMessage" class="notice success-notice" role="status">{{ successMessage }}</div>
                 <div v-if="firstError" class="notice" role="alert">{{ firstError }}</div>
                 <form @submit.prevent="submit">
-                    <label for="email">Email address</label>
-                    <input id="email" v-model="form.email" class="field" type="email" placeholder="admin@barangay.gov.ph" required autofocus autocomplete="username">
+                    <label for="email">Email or username</label>
+                    <input id="email" v-model="form.email" class="field" type="text" placeholder="Email or name-based beneficiary username" required autofocus autocomplete="username">
                     <label for="password">Password</label>
                     <div class="password-wrap">
                         <input id="password" v-model="form.password" class="field" :type="passwordVisible ? 'text' : 'password'" placeholder="Enter password" required autocomplete="current-password">

@@ -2,6 +2,7 @@
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
+import { appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -18,8 +19,12 @@ const rows = computed(() => {
     );
 });
 
-function reportLost(beneficiary) {
-    if (!window.confirm(`Report the QR code for ${beneficiary.full_name} as lost?`)) return;
+async function reportLost(beneficiary) {
+    const confirmed = await appConfirm(`Report the QR code for ${beneficiary.full_name} as lost?`, {
+        title: 'Report QR code as lost?',
+        confirmLabel: 'Report lost',
+    });
+    if (!confirmed) return;
     processingId.value = beneficiary.id;
     router.post(routes.value.lostQrReport.replace('__ID__', encodeURIComponent(beneficiary.id)), {}, {
         preserveScroll: true,

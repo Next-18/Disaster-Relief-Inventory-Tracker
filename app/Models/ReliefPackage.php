@@ -8,6 +8,8 @@ class ReliefPackage extends Model
 {
     protected $fillable = ['package_name', 'description', 'category', 'status'];
 
+    protected $appends = ['available_quantity'];
+
     public function distributions()
     {
         return $this->hasMany(Distribution::class, 'package_id');

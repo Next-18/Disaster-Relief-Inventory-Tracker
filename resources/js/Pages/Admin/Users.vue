@@ -3,6 +3,7 @@ import { useForm, usePage, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
+import { appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -18,6 +19,7 @@ const form = useForm({
     email: '',
     password: '',
     password_confirmation: '',
+    beneficiary_id: '',
     role: 'staff',
 });
 
@@ -37,6 +39,7 @@ function editUser(user) {
     form.name = user.name;
     form.email = user.email;
     form.role = user.role;
+    form.beneficiary_id = user.beneficiary_id ?? '';
     form.password = '';
     form.password_confirmation = '';
     document.getElementById('user-modal').showModal();
@@ -55,10 +58,13 @@ function updateUser() {
     });
 }
 
-function deleteUser(id) {
-    if (confirm('Are you sure you want to delete this user account? This action cannot be undone.')) {
-        router.delete(`${routes.value.users}/${id}`);
-    }
+async function deleteUser(id) {
+    const confirmed = await appConfirm('This action cannot be undone.', {
+        title: 'Delete this user account?',
+        confirmLabel: 'Delete account',
+        danger: true,
+    });
+    if (confirmed) router.delete(`${routes.value.users}/${id}`);
 }
 
 function closeModal() {
@@ -79,7 +85,7 @@ function openCreateModal() {
         <section class="module-heading">
             <div>
                 <h2>User accounts</h2>
-                <p>Manage administrator, staff, and volunteer accounts. Beneficiaries can create their own accounts using their beneficiary number.</p>
+                <p>Manage administrator, staff, volunteer, and beneficiary accounts. Beneficiaries sign in with their name-based username or beneficiary code.</p>
             </div>
             <button class="add-button" type="button" @click="openCreateModal">
                 <span>+</span> Add team account
@@ -116,7 +122,7 @@ function openCreateModal() {
                                 </div>
                             </div>
                         </td>
-                        <td>{{ user.email }}</td>
+                        <td>{{ user.username || user.email }}</td>
                         <td>
                             <span :class="['tag', user.role === 'admin' ? 'warning' : 'success']">
                                 {{ user.role.charAt(0).toUpperCase() + user.role.slice(1) }}

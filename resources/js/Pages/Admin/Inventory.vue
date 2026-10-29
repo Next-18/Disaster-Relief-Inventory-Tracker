@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AdminModal from '../../Components/AdminModal.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
+import { appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -104,9 +105,13 @@ function saveItem() {
     else form.post(routes.value.inventoryStore, options);
 }
 
-function deleteItem(item) {
-    if (!window.confirm(`Delete “${item.item_name}”? This cannot be undone.`)) return;
-    router.delete(routes.value.inventoryDelete.replace('__ID__', encodeURIComponent(item.id)), { preserveScroll: true });
+async function deleteItem(item) {
+    const confirmed = await appConfirm(`Delete “${item.item_name}”? This cannot be undone.`, {
+        title: 'Delete inventory item?',
+        confirmLabel: 'Delete item',
+        danger: true,
+    });
+    if (confirmed) router.delete(routes.value.inventoryDelete.replace('__ID__', encodeURIComponent(item.id)), { preserveScroll: true });
 }
 
 function openStockModal(item) {
@@ -137,7 +142,11 @@ function formatDate(value) {
         <button v-if="canManageInventory" class="add-button" type="button" @click="openAddModal"><span>+</span> Add item</button>
     </section>
 
-    <div class="inventory-summary"><div><small>Stock records</small><b>{{ Number(totalInventoryItems).toLocaleString() }}</b></div><div><small>Low stock records</small><b>{{ Number(lowStockCount).toLocaleString() }}</b></div><div><small>Categories</small><b>{{ Number(categoryCount).toLocaleString() }}</b></div></div>
+    <div class="inventory-summary" aria-label="Inventory summary">
+        <div class="inventory-summary-card"><small>Stock records</small><b>{{ Number(totalInventoryItems).toLocaleString() }}</b><span>Supply types tracked</span></div>
+        <button type="button" class="inventory-summary-card inventory-summary-alert" :aria-label="`Review ${lowStockCount} low stock records`" @click="filters.stock_status = 'low'; visitFilters()"><small>Low stock records</small><b>{{ Number(lowStockCount).toLocaleString() }}</b><span>Review items <span aria-hidden="true">→</span></span></button>
+        <div class="inventory-summary-card"><small>Categories</small><b>{{ Number(categoryCount).toLocaleString() }}</b><span>Supply groups</span></div>
+    </div>
 
     <section class="panel record-panel">
         <div class="panel-heading">
@@ -150,16 +159,16 @@ function formatDate(value) {
                 <button v-if="filters.search || filters.stock_status !== 'all'" type="button" class="filter-clear" @click="filters.search = ''; filters.stock_status = 'all'; visitFilters()">Clear</button>
             </form>
         </div>
-        <div class="table-wrap"><table class="record-table">
+        <div class="table-wrap"><table class="record-table inventory-table">
             <thead><tr><th>ITEM</th><th>CATEGORY</th><th>AVAILABLE STOCK</th><th>MINIMUM</th><th>STATUS</th><th>{{ canUpdateStock ? 'ACTIONS' : 'STATUS' }}</th></tr></thead>
             <tbody>
                 <tr v-for="item in rows" :key="item.id" :class="{ 'inventory-row-low': item.status === 'Low Stock' }">
-                    <td><b>{{ item.item_name }}</b><small>Last updated {{ formatDate(item.updated_at) }}</small></td>
-                    <td>{{ item.category }}</td>
-                    <td><b>{{ item.quantity }}</b> {{ item.unit }}</td>
-                    <td>{{ item.minimum_stock }} {{ item.unit }}</td>
-                    <td><span class="tag" :class="item.status === 'Low Stock' ? 'warning' : 'success'">{{ item.status }}</span></td>
-                    <td>
+                    <td data-label="Item"><b>{{ item.item_name }}</b><small>Last updated {{ formatDate(item.updated_at) }}</small></td>
+                    <td data-label="Category">{{ item.category }}</td>
+                    <td data-label="On hand"><b>{{ Number(item.quantity).toLocaleString() }}</b> {{ item.unit }}</td>
+                    <td data-label="Minimum">{{ Number(item.minimum_stock).toLocaleString() }} {{ item.unit }}</td>
+                    <td data-label="Status"><span class="tag" :class="item.status === 'Low Stock' ? 'warning' : 'success'">{{ item.status }}</span></td>
+                    <td data-label="Actions">
                         <div v-if="canManageInventory" class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(item)">Edit</button><button type="button" class="action-btn delete" @click="deleteItem(item)">Delete</button></div>
                         <button v-else-if="canUpdateStock" type="button" class="action-btn" @click="openStockModal(item)">Update stock / report issue</button>
                         <span v-else>View only</span>

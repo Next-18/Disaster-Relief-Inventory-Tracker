@@ -14,9 +14,11 @@ use App\Services\DistributionStockService;
 use App\Services\BeneficiaryNotificationService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use SimpleSoftwareIO\QrCode\Facades\QrCode as QRCodeGenerator;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
@@ -105,7 +107,7 @@ class AdminController extends Controller
     {
         $rules = [
             'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-\s()]*$/'],
+            'contact_number' => ['nullable', 'string', 'regex:/^\+639\d{9}$/'],
             'address' => ['nullable', 'string', 'max:255'],
             'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
             'priority_type' => ['required', 'in:Regular,Senior Citizen,PWD,Solo Parent'],
@@ -143,52 +145,42 @@ class AdminController extends Controller
             }
         }
 
-        // Generate unique beneficiary number
-        $beneficiaryNo = null;
-        $maxAttempts = 100;
-        $attempts = 0;
-
-        do {
-            $beneficiaryNo = 'BEN-' . str_pad((string) ((Beneficiary::max('id') ?? 0) + 1001 + $attempts), 4, '0', STR_PAD_LEFT);
-            $attempts++;
-
-            // Check if beneficiary number exists in beneficiaries table
-            $existsInBeneficiaries = Beneficiary::where('beneficiary_no', $beneficiaryNo)->exists();
-            // Check if beneficiary number exists in users table (as email)
-            $existsInUsers = User::where('email', $beneficiaryNo)->exists();
-
-            if (!$existsInBeneficiaries && !$existsInUsers) {
-                break;
-            }
-        } while ($attempts < $maxAttempts);
-
-        if ($attempts >= $maxAttempts) {
-            return back()->withInput()->withErrors(['beneficiary_no' => 'Could not generate a unique beneficiary number. Please try again.']);
-        }
-
-        $data['beneficiary_no'] = $beneficiaryNo;
-        $beneficiary = Beneficiary::create($data);
-
-        // Auto-generate temporary password and create user account
+        $data['beneficiary_no'] = $this->generateUniqueCode();
         $tempPassword = $this->generateTemporaryPassword();
 
-        User::create([
-            'name' => $beneficiary->full_name,
-            'email' => $beneficiary->beneficiary_no,
-            'password' => $tempPassword,
-            'beneficiary_id' => $beneficiary->id,
-            'role' => 'user',
-            'password_changed' => false,
-        ]);
+        try {
+            $beneficiary = DB::transaction(function () use ($data, $tempPassword) {
+                $beneficiary = Beneficiary::create($data);
+
+                User::create([
+                    'name' => $beneficiary->full_name,
+                    'email' => $beneficiary->beneficiary_no,
+                    'username' => User::uniqueUsernameFor($beneficiary->full_name),
+                    'password' => $tempPassword,
+                    'beneficiary_id' => $beneficiary->id,
+                    'role' => 'user',
+                    'password_changed' => false,
+                ]);
+
+                $this->logAudit('create', 'users', "Created user account for beneficiary: {$beneficiary->full_name}");
+                $this->logAudit('create', 'beneficiaries', "Created beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
+
+                return $beneficiary;
+            });
+        } catch (\Illuminate\Database\QueryException $exception) {
+            report($exception);
+
+            return back()->withInput()->withErrors([
+                'full_name' => 'The beneficiary or login account could not be created. Check that the record is not already registered, then try again.',
+            ]);
+        }
 
         $credentials = [
-            'username' => $beneficiary->beneficiary_no,
+            'username' => $beneficiary->user()->value('username'),
+            'beneficiary_no' => $beneficiary->beneficiary_no,
             'password' => $tempPassword,
             'beneficiary_name' => $beneficiary->full_name,
         ];
-
-        $this->logAudit('create', 'users', "Created user account for beneficiary: {$beneficiary->full_name}");
-        $this->logAudit('create', 'beneficiaries', "Created beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
 
         if ($credentials) {
             session()->flash('user_credentials', $credentials);
@@ -228,6 +220,9 @@ class AdminController extends Controller
     public function deleteBeneficiary($id)
     {
         $beneficiary = Beneficiary::findOrFail($id);
+        if ($beneficiary->distributions()->exists()) {
+            return back()->with('error', 'This beneficiary has distribution history and cannot be deleted. Mark the record inactive to preserve its history.');
+        }
         $beneficiaryName = $beneficiary->full_name;
         $beneficiaryNo = $beneficiary->beneficiary_no;
         $beneficiary->delete();
@@ -241,6 +236,14 @@ class AdminController extends Controller
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['required', 'integer', 'min:1', 'distinct'],
         ]);
+
+        $hasDistributionHistory = Beneficiary::query()
+            ->whereIn('id', $request->input('ids'))
+            ->whereHas('distributions')
+            ->exists();
+        if ($hasDistributionHistory) {
+            return back()->with('error', 'One or more selected beneficiaries have distribution history. Mark them inactive to preserve their records.');
+        }
 
         $beneficiaries = DB::transaction(function () use ($request) {
             $beneficiaries = Beneficiary::whereIn('id', $request->input('ids'))->get();
@@ -521,8 +524,19 @@ class AdminController extends Controller
         if ($item->reliefPackages()->exists()) {
             return back()->with('error', 'This supply is used in a package recipe. Remove it from the recipe before deleting it.');
         }
+        if ($item->stockDeliveryItems()->exists()) {
+            return back()->with('error', 'This supply has stock delivery history and cannot be deleted. Keep it in inventory to preserve delivery records; you can adjust its stock to zero instead.');
+        }
+
         $itemName = $item->item_name;
-        $item->delete();
+        try {
+            $item->delete();
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return back()->with('error', 'This supply is linked to recorded inventory activity and cannot be deleted. Keep it in inventory to preserve its history.');
+        }
+
         $this->logAudit('delete', 'inventory', "Deleted inventory item: {$itemName}");
         return redirect()->route('admin.inventory')->with('success', 'Inventory item deleted successfully.');
     }
@@ -671,6 +685,10 @@ class AdminController extends Controller
     public function deletePackage($id)
     {
         $package = ReliefPackage::findOrFail($id);
+        if ($package->distributions()->exists()) {
+            return back()->with('error', 'This package has distribution history and cannot be deleted. Mark it unavailable to preserve its records.');
+        }
+
         $packageName = $package->package_name;
         $package->delete();
         $this->logAudit('delete', 'packages', "Deleted relief package: {$packageName}");
@@ -685,10 +703,15 @@ class AdminController extends Controller
         ]);
         $canReleasePackages = $request->user()->canReleasePackages();
         $canAssignDistributions = $request->user()->isAdmin();
-        if (! $canReleasePackages) {
-            $query->whereRaw('1 = 0');
-        }
+        $canViewDistributionHistory = $request->user()->canRecordDistributions();
         $search = trim((string) $request->input('search', ''));
+        $status = in_array($request->input('status'), ['Pending', 'Released', 'Cancelled', 'Voided'], true)
+            ? $request->input('status')
+            : 'all';
+
+        if ($canViewDistributionHistory && $status !== 'all') {
+            $query->where('status', $status);
+        }
 
         if ($search !== '') {
             $query->where(function ($distributions) use ($search) {
@@ -727,10 +750,12 @@ class AdminController extends Controller
             'beneficiaries' => $beneficiaries,
             'packages' => $packages,
             'search' => $search,
+            'status' => $status,
             'today' => now()->format('Y-m-d'),
             'canManageDistributions' => auth()->user()->isAdmin(),
             'canAssignDistributions' => $canAssignDistributions,
             'canReleasePackages' => $canReleasePackages,
+            'canViewDistributionHistory' => $canViewDistributionHistory,
         ]);
     }
 
@@ -738,7 +763,7 @@ class AdminController extends Controller
     {
         $validated = $request->validate(['code' => ['required', 'string', 'max:64']]);
         $beneficiary = Beneficiary::query()
-            ->whereRaw('UPPER(beneficiary_no) = ?', [strtoupper(trim($validated['code']))])
+            ->forQrPayload($validated['code'])
             ->where('status', 'Active')
             ->first();
 
@@ -755,6 +780,8 @@ class AdminController extends Controller
                 'id' => $distribution->id,
                 'package_name' => $distribution->reliefPackage?->package_name ?? 'Relief package',
                 'assigned_date' => $distribution->date_released?->format('Y-m-d'),
+                'start_date' => $distribution->start_date?->format('Y-m-d'),
+                'deadline' => $distribution->deadline?->format('Y-m-d'),
             ])
             ->values();
         $releasedToday = $beneficiary->distributions()
@@ -776,107 +803,6 @@ class AdminController extends Controller
         ]);
     }
 
-    public function offlineAssignments()
-    {
-        $assignments = Beneficiary::query()
-            ->where('status', 'Active')
-            ->whereHas('distributions', fn ($query) => $query->where('status', 'Pending'))
-            ->with(['distributions' => fn ($query) => $query
-                ->with('reliefPackage:id,package_name')
-                ->where('status', 'Pending')
-                ->orderBy('date_released')])
-            ->orderBy('beneficiary_no')
-            ->get(['id', 'beneficiary_no', 'full_name'])
-            ->flatMap(fn (Beneficiary $beneficiary) => $beneficiary->distributions->map(fn (Distribution $distribution) => [
-                'beneficiary_no' => $beneficiary->beneficiary_no,
-                'full_name' => $beneficiary->full_name,
-                'distribution_id' => $distribution->id,
-                'package_name' => $distribution->reliefPackage?->package_name ?? 'Relief package',
-                'assigned_date' => $distribution->date_released?->format('Y-m-d'),
-            ]))
-            ->values();
-
-        return response()->json(['data' => $assignments, 'prepared_at' => now()->toIso8601String()]);
-    }
-
-    public function syncOfflineClaims(Request $request, DistributionStockService $stock)
-    {
-        $validated = $request->validate([
-            'claims' => ['required', 'array', 'min:1', 'max:200'],
-            'claims.*.beneficiary_no' => ['required', 'string', 'max:64'],
-            'claims.*.distribution_id' => ['required', 'integer', 'exists:distributions,id'],
-            'claims.*.offline_claim_id' => ['required', 'uuid'],
-        ]);
-        $results = [];
-
-        foreach ($validated['claims'] as $claim) {
-            $beneficiary = Beneficiary::query()
-                ->whereRaw('UPPER(beneficiary_no) = ?', [strtoupper(trim($claim['beneficiary_no']))])
-                ->where('status', 'Active')
-                ->first();
-
-            if (! $beneficiary) {
-                $results[] = ['distribution_id' => $claim['distribution_id'], 'success' => false, 'message' => 'Beneficiary is missing or inactive. Staff review is required.'];
-                continue;
-            }
-
-            try {
-                [$distribution, $alreadySynced] = DB::transaction(function () use ($claim, $beneficiary, $request, $stock) {
-                    Beneficiary::query()->lockForUpdate()->findOrFail($beneficiary->id);
-                    $distribution = Distribution::query()
-                        ->whereKey($claim['distribution_id'])
-                        ->where('beneficiary_id', $beneficiary->id)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (! $distribution) {
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'claim' => 'Assignment could not be found for this beneficiary. Staff review is required.',
-                        ]);
-                    }
-
-                    if ($distribution->status === 'Released') {
-                        if ($distribution->offline_claim_id === $claim['offline_claim_id'] && (int) $distribution->distributed_by === (int) $request->user()->id) {
-                            return [$distribution->load(['beneficiary', 'reliefPackage']), true];
-                        }
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'claim' => 'Assignment is no longer pending. It may have been claimed already; check the distribution record.',
-                        ]);
-                    }
-
-                    if ($distribution->status !== 'Pending') {
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'claim' => 'Assignment is no longer pending. Staff review is required.',
-                        ]);
-                    }
-
-                    $distribution->update([
-                        'status' => 'Released',
-                        'date_released' => now(),
-                        'distributed_by' => $request->user()->id,
-                        'offline_claim_id' => $claim['offline_claim_id'],
-                    ]);
-                    $stock->consumeFor($distribution);
-
-                    return [$distribution->load(['beneficiary', 'reliefPackage']), false];
-                });
-
-                if (! $alreadySynced) {
-                    $this->logAudit('release', 'distribution', "Synced offline release of {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name}");
-                }
-                $results[] = ['distribution_id' => $distribution->id, 'success' => true, 'message' => 'Claim synced and confirmed.'];
-            } catch (\Illuminate\Validation\ValidationException $exception) {
-                $results[] = [
-                    'distribution_id' => $claim['distribution_id'],
-                    'success' => false,
-                    'message' => collect($exception->errors())->flatten()->first() ?? 'Could not sync this claim. Staff review is required.',
-                ];
-            }
-        }
-
-        return response()->json(['results' => $results]);
-    }
-
     public function releasePendingDistribution(Request $request, DistributionStockService $stock)
     {
         $validated = $request->validate([
@@ -884,7 +810,7 @@ class AdminController extends Controller
             'distribution_id' => ['required', 'integer', 'exists:distributions,id'],
         ]);
         $beneficiary = Beneficiary::query()
-            ->whereRaw('UPPER(beneficiary_no) = ?', [strtoupper(trim($validated['beneficiary_no']))])
+            ->forQrPayload($validated['beneficiary_no'])
             ->where('status', 'Active')
             ->firstOrFail();
 
@@ -900,6 +826,10 @@ class AdminController extends Controller
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'distribution_id' => 'This pending package assignment is no longer available. Refresh and scan again.',
                 ]);
+            }
+
+            if ($windowError = $distribution->releaseWindowError()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['distribution_id' => $windowError]);
             }
 
             $distribution->update([
@@ -926,10 +856,13 @@ class AdminController extends Controller
             'beneficiary_id' => ['nullable', 'required_if:recipient_mode,individual', 'exists:beneficiaries,id'],
             'priority_type' => ['nullable', 'required_if:recipient_mode,priority', 'in:Senior Citizen,PWD,Solo Parent'],
             'package_id' => ['required', 'exists:relief_packages,id'],
-            'date_released' => ['required', 'date'],
-            'status' => ['required', 'in:Released,Pending'],
+            'start_date' => ['required', 'date'],
+            'deadline' => ['required', 'date', 'after_or_equal:start_date'],
             'notes' => ['nullable', 'string'],
         ]);
+        $data['date_released'] = $data['start_date'];
+        // A distribution record is only an assignment. Release is confirmed by the QR scan flow.
+        $data['status'] = 'Pending';
         $recipients = $mode === 'individual'
             ? Beneficiary::where('status', 'Active')->whereKey($data['beneficiary_id'])->get()
             : Beneficiary::where('status', 'Active')
@@ -978,38 +911,53 @@ class AdminController extends Controller
     public function updateDistribution(Request $request, $id, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
     {
         $distribution = Distribution::with('inventoryItems')->findOrFail($id);
+        if (in_array($distribution->status, ['Cancelled', 'Voided'], true)) {
+            return back()->with('error', 'Cancelled or voided distribution history cannot be edited. Create a new assignment if needed.');
+        }
         $data = $request->validate([
             'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
             'package_id' => ['required', 'exists:relief_packages,id'],
-            'date_released' => ['required', 'date'],
-            'status' => ['required', 'in:Released,Pending'],
+            'start_date' => ['required', 'date'],
+            'deadline' => ['required', 'date', 'after_or_equal:start_date'],
             'notes' => ['nullable', 'string'],
         ]);
         $wasPending = $distribution->status === 'Pending';
         $beneficiaryChanged = (int) $distribution->beneficiary_id !== (int) $data['beneficiary_id'];
         $packageChanged = (int) $distribution->package_id !== (int) $data['package_id'];
-        $dateChanged = $distribution->date_released?->toDateString() !== $data['date_released'];
+        $windowChanged = $distribution->start_date?->toDateString() !== $data['start_date']
+            || $distribution->deadline?->toDateString() !== $data['deadline'];
         DB::transaction(function () use ($distribution, $data, $stock) {
             $stock->restoreFor($distribution);
             $distribution->update($data);
             $stock->consumeFor($distribution);
         });
-        if ($distribution->status === 'Pending' && (! $wasPending || $beneficiaryChanged || $packageChanged || $dateChanged)) {
+        if ($distribution->status === 'Pending' && (! $wasPending || $beneficiaryChanged || $packageChanged || $windowChanged)) {
             $notifications->notifyPendingAssignments([$distribution->load(['beneficiary', 'reliefPackage'])]);
         }
         $this->logAudit('update', 'distribution', "Updated distribution record ID: {$id}");
         return redirect()->route('admin.distribution')->with('success', 'Distribution updated successfully.');
     }
 
-    public function deleteDistribution($id, DistributionStockService $stock)
+    public function deleteDistribution($id, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
     {
         $distribution = Distribution::with('inventoryItems')->findOrFail($id);
-        DB::transaction(function () use ($distribution, $stock) {
-            $stock->restoreFor($distribution);
-            $distribution->delete();
+        if (in_array($distribution->status, ['Cancelled', 'Voided'], true)) {
+            return back()->with('error', 'This distribution history has already been closed and is being kept for records.');
+        }
+        $wasPending = $distribution->status === 'Pending';
+        $nextStatus = $wasPending ? 'Cancelled' : 'Voided';
+        DB::transaction(function () use ($distribution, $stock, $notifications, $nextStatus) {
+            if ($distribution->status === 'Pending') {
+                $stock->restoreFor($distribution);
+                $notifications->notifyPendingAssignmentCancelled($distribution);
+            }
+            $distribution->update(['status' => $nextStatus]);
         });
-        $this->logAudit('delete', 'distribution', "Deleted distribution record ID: {$id}");
-        return redirect()->route('admin.distribution')->with('success', 'Distribution deleted successfully.');
+        $this->logAudit($wasPending ? 'cancel' : 'void', 'distribution', "{$nextStatus} distribution record ID: {$id}");
+        $message = $wasPending
+            ? 'Assignment cancelled. Stock was restored, the beneficiary was notified, and the history record was kept.'
+            : 'Distribution record voided. The history was kept and released stock was not restored.';
+        return redirect()->route('admin.distribution')->with('success', $message);
     }
 
     public function qrCodes(Request $request)
@@ -1039,12 +987,35 @@ class AdminController extends Controller
         ]);
     }
 
+    protected function generateUniqueCode(): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        do {
+            $token = '';
+            for ($index = 0; $index < 6; $index++) {
+                $token .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+            $exists = Beneficiary::query()
+                ->where(fn ($query) => $query->where('beneficiary_no', $token)->orWhere('qr_token', $token))
+                ->exists()
+                || User::query()->where('email', $token)->exists();
+        } while ($exists);
+
+        return $token;
+    }
+
     public function generateQRCode($id)
     {
         $beneficiary = Beneficiary::findOrFail($id);
-        $qrCodeData = $beneficiary->beneficiary_no;
-        $qrCode = QRCodeGenerator::format('svg')->size(300)->errorCorrection('H')->generate($qrCodeData);
-        $fileName = 'qr_' . $beneficiary->beneficiary_no . '.svg';
+        $wasReportedLost = (bool) $beneficiary->qr_revoked;
+        $previousBeneficiaryNo = $beneficiary->beneficiary_no;
+        $newBeneficiaryNo = $wasReportedLost ? $this->generateUniqueCode() : $previousBeneficiaryNo;
+        $qrToken = $newBeneficiaryNo;
+        $qrCodeData = $qrToken;
+        // Keep the standard four-module quiet zone so phone cameras can lock
+        // onto the code reliably, including when the QR is printed.
+        $qrCode = QRCodeGenerator::format('svg')->size(300)->margin(4)->errorCorrection('H')->generate($qrCodeData);
+        $fileName = 'qr_' . $newBeneficiaryNo . '_' . substr($qrToken, 0, 12) . '.svg';
         $filePath = public_path('qr-codes/' . $fileName);
 
         if (!file_exists(public_path('qr-codes'))) {
@@ -1052,11 +1023,29 @@ class AdminController extends Controller
         }
 
         file_put_contents($filePath, $qrCode);
-        $beneficiary->qr_code = $fileName;
-        $beneficiary->save();
-        $this->logAudit('create', 'qr-codes', "Generated QR code for beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
+        DB::transaction(function () use ($beneficiary, $newBeneficiaryNo, $fileName, $qrToken, $wasReportedLost) {
+            if ($wasReportedLost) {
+                $beneficiary->beneficiary_no = $newBeneficiaryNo;
+                $beneficiary->user?->update(['email' => $newBeneficiaryNo]);
+            }
 
-        return redirect()->back()->with('success', 'QR code generated successfully.');
+            $beneficiary->qr_code = $fileName;
+            $beneficiary->qr_token = $qrToken;
+            $beneficiary->qr_revoked = false;
+            $beneficiary->save();
+        });
+
+        $auditAction = $wasReportedLost ? 'replace' : 'create';
+        $auditMessage = $wasReportedLost
+            ? "Replaced lost QR and beneficiary code for {$beneficiary->full_name}: {$previousBeneficiaryNo} → {$newBeneficiaryNo}"
+            : "Generated QR code for beneficiary: {$beneficiary->full_name} ({$newBeneficiaryNo})";
+        $this->logAudit($auditAction, 'qr-codes', $auditMessage);
+
+        $successMessage = $wasReportedLost
+            ? "New QR code generated. The new beneficiary code is {$newBeneficiaryNo}."
+            : 'QR code generated successfully.';
+
+        return redirect()->back()->with('success', $successMessage);
     }
 
     public function downloadQRCode($id)
@@ -1079,6 +1068,7 @@ class AdminController extends Controller
     {
         $beneficiary = Beneficiary::findOrFail($id);
         $beneficiary->qr_code = null;
+        $beneficiary->qr_revoked = true;
         $beneficiary->save();
         return redirect()->route('admin.lost-qr')->with('success', 'QR code marked as lost. A new one can be generated.');
     }
@@ -1493,7 +1483,13 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $id],
             'password' => ['nullable', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
-            'beneficiary_id' => ['nullable', 'exists:beneficiaries,id'],
+            'beneficiary_id' => [
+                'nullable',
+                'required_if:role,user',
+                'integer',
+                'exists:beneficiaries,id',
+                Rule::unique('users', 'beneficiary_id')->ignore($id),
+            ],
             'role' => ['required', 'string', 'in:admin,staff,volunteer,user'],
         ]);
 
@@ -1502,6 +1498,10 @@ class AdminController extends Controller
             $data['password_changed'] = true; // Mark as changed when admin updates password
         } else {
             unset($data['password']);
+        }
+
+        if ($data['role'] !== 'user') {
+            $data['beneficiary_id'] = null;
         }
 
         $user->update($data);
@@ -1518,6 +1518,10 @@ class AdminController extends Controller
         
         if ($user->id === auth()->id()) {
             return back()->with('error', 'You cannot delete your own account.');
+        }
+
+        if (Distribution::where('distributed_by', $user->id)->exists()) {
+            return back()->with('error', 'This account recorded distributions and cannot be deleted. Update its role or retain it to preserve the audit history.');
         }
         
         $beneficiaryName = $user->beneficiary ? $user->beneficiary->full_name : 'No beneficiary linked';

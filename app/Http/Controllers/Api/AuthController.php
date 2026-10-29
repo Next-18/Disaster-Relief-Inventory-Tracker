@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -21,20 +22,28 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $validated = $request->validate([
-            'beneficiary_no' => ['required', 'string', 'max:255'],
+            'username' => ['nullable', 'string', 'max:255', 'required_without:beneficiary_no'],
+            'beneficiary_no' => ['nullable', 'string', 'max:255', 'required_without:username'],
             'password' => ['required', 'string'],
         ]);
 
-        $identifier = trim($validated['beneficiary_no']);
-        if (! filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
-            $identifier = Str::upper($identifier);
-        }
-        if (!Auth::attempt([
-            'email' => $identifier,
+        $identifier = trim((string) ($validated['username'] ?? $validated['beneficiary_no']));
+        $authenticated = Auth::attempt([
+            'username' => Str::lower($identifier),
             'password' => $validated['password'],
-        ])) {
+        ]);
+
+        if (! $authenticated) {
+            $legacyIdentifier = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? $identifier : Str::upper($identifier);
+            $authenticated = Auth::attempt([
+                'email' => $legacyIdentifier,
+                'password' => $validated['password'],
+            ]);
+        }
+
+        if (! $authenticated) {
             throw ValidationException::withMessages([
-                'beneficiary_no' => ['The beneficiary number or password is incorrect.'],
+                'beneficiary_no' => ['The username, beneficiary code, or password is incorrect.'],
             ]);
         }
 
@@ -46,6 +55,11 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->role === 'user' && ! $user->password_changed) {
+            $user->password_changed = true;
+            $user->save();
+        }
+
         $token = $user->createToken('mobile-app-token')->plainTextToken;
 
         return response()->json([
@@ -54,12 +68,18 @@ class AuthController extends Controller
             'data' => [
                 'user' => [
                     'id' => $user->id,
+                    'beneficiary_id' => $user->beneficiary_id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'beneficiary_no' => $user->email,
+                    'username' => $user->username,
+                    'beneficiary_no' => $user->beneficiary?->beneficiary_no ?? $user->email,
                     'password_changed' => (bool) $user->password_changed,
+                    'requires_password_change' => false,
                     'role' => $user->role,
                 ],
+                'next_action' => 'open_dashboard',
+                'next_screen' => null,
+                'password_change_endpoint' => '/api/auth/change-password',
                 'token' => $token,
                 'token_type' => 'Bearer',
             ],
@@ -87,6 +107,12 @@ class AuthController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'username' => $user->username,
+                    'beneficiary_no' => $user->beneficiary?->beneficiary_no ?? $user->email,
+                    'password_changed' => (bool) $user->password_changed,
+                    'requires_password_change' => false,
+                    'next_action' => 'open_dashboard',
+                    'next_screen' => null,
                     'role' => $user->role,
                 ],
             ],
@@ -112,7 +138,10 @@ class AuthController extends Controller
         $user->password_changed = true;
         $user->save();
 
-        $currentTokenId = $user->currentAccessToken()?->getKey();
+        $currentAccessToken = $user->currentAccessToken();
+        $currentTokenId = $currentAccessToken instanceof PersonalAccessToken
+            ? $currentAccessToken->getKey()
+            : null;
         $user->tokens()
             ->when($currentTokenId, fn ($tokens) => $tokens->where('id', '!=', $currentTokenId))
             ->delete();

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import AdminModal from '../../Components/AdminModal.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
+import { appAlert, appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -43,6 +44,10 @@ const editingId = ref(null);
 const showCredentials = ref(false);
 const form = useForm({
     full_name: '',
+    first_name: '',
+    middle_name: '',
+    last_name: '',
+    suffix: '',
     contact_number: '',
     address: '',
     household_size: '',
@@ -191,7 +196,13 @@ function openAddModal() {
 function openEditModal(beneficiary) {
     form.clearErrors();
     form.full_name = beneficiary.full_name ?? '';
-    form.contact_number = beneficiary.contact_number ?? '';
+    Object.assign(form, splitNameParts(form.full_name));
+    const storedPhone = String(beneficiary.contact_number ?? '').replace(/\D/g, '');
+    form.contact_number = storedPhone.startsWith('63')
+        ? storedPhone.slice(2, 12)
+        : storedPhone.startsWith('0')
+            ? storedPhone.slice(1, 11)
+            : storedPhone.slice(0, 10);
     form.address = beneficiary.address ?? '';
     form.household_size = beneficiary.household_size ?? '';
     form.priority_type = beneficiary.priority_type ?? 'Regular';
@@ -200,7 +211,74 @@ function openEditModal(beneficiary) {
     beneficiaryModal.value?.showModal();
 }
 
+function splitNameParts(fullName) {
+    const parts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean);
+    let suffix = '';
+    if (parts.length > 1 && /^(jr\.?|sr\.?|ii|iii|iv|v|vi|vii|viii|ix|x)$/i.test(parts.at(-1))) {
+        suffix = parts.pop();
+    }
+    const last_name = parts.length > 1 ? parts.pop() : '';
+    const first_name = parts.shift() ?? '';
+    const middle_name = parts.join(' ');
+
+    return { first_name, middle_name, last_name, suffix };
+}
+
+function composeFullName() {
+    return [form.first_name, form.middle_name, form.last_name, form.suffix]
+        .map((part) => String(part ?? '').trim())
+        .filter(Boolean)
+        .join(' ');
+}
+
+function sanitizePhoneInput(event) {
+    const input = event.target;
+    const value = input.value.replace(/\D/g, '').slice(0, 10);
+    form.contact_number = value;
+    input.value = value;
+}
+
+function sanitizeHouseholdSize(event) {
+    const value = event.target.value.replace(/\D/g, '').slice(0, 2);
+    form.household_size = value;
+    event.target.value = value;
+}
+
+function showFormAlert(message) {
+    appAlert(message, { title: 'Unable to save beneficiary' });
+}
+
+function askForConfirmation({ title, message, confirmLabel, danger = false }) {
+    return appConfirm(message, { title, confirmLabel, danger });
+}
+
 function saveBeneficiary() {
+    form.clearErrors('full_name', 'contact_number', 'household_size');
+
+    const fullName = composeFullName();
+    if (!form.first_name.trim() || !form.last_name.trim()) {
+        showFormAlert('Enter both a first name and a last name.');
+        return;
+    }
+    if (fullName.length > 255) {
+        showFormAlert('The combined name must be 255 characters or fewer.');
+        return;
+    }
+
+    const phone = form.contact_number.trim();
+    if (phone && !/^9\d{9}$/.test(phone)) {
+        form.setError('contact_number', 'Enter exactly 10 digits after +63, starting with 9.');
+        showFormAlert('The contact number is invalid. Enter exactly 10 digits after +63, starting with 9.');
+        return;
+    }
+
+    const householdSize = String(form.household_size).trim();
+    if (householdSize && !/^(?:[1-9]|[1-9]\d)$/.test(householdSize)) {
+        form.setError('household_size', 'Household size must be a whole number from 1 to 99.');
+        showFormAlert('Household size must be a whole number from 1 to 99.');
+        return;
+    }
+
     const options = {
         preserveScroll: true,
         preserveState: false,
@@ -209,15 +287,38 @@ function saveBeneficiary() {
             form.reset();
             editingId.value = null;
         },
+        onError: (errors) => {
+            const [field, message] = Object.entries(errors)[0] ?? [];
+            const labels = { full_name: 'Full name', contact_number: 'Contact number', household_size: 'Household size', priority_type: 'Priority', status: 'Status' };
+            showFormAlert((labels[field] ?? 'Beneficiary') + ': ' + (message ?? 'Please review the form and try again.'));
+        },
     };
 
+    form.transform((data) => ({ ...data, full_name: fullName, contact_number: phone ? `+63${phone}` : null }));
     if (editingId.value) form.put(routes.value.beneficiaryUpdate.replace('__ID__', encodeURIComponent(editingId.value)), options);
     else form.post(routes.value.beneficiaryStore, options);
 }
 
-function deleteBeneficiary(beneficiary) {
-    if (!window.confirm(`Delete ${beneficiary.full_name}? This cannot be undone.`)) return;
-    router.delete(routes.value.beneficiaryDelete.replace('__ID__', encodeURIComponent(beneficiary.id)), { preserveScroll: true });
+async function deleteBeneficiary(beneficiary) {
+    const confirmed = await askForConfirmation({
+        title: 'Delete beneficiary?',
+        message: `Delete ${beneficiary.full_name}? This cannot be undone.`,
+        confirmLabel: 'Delete beneficiary',
+        danger: true,
+    });
+    if (confirmed) router.delete(routes.value.beneficiaryDelete.replace('__ID__', encodeURIComponent(beneficiary.id)), { preserveScroll: true });
+}
+
+function editMenuBeneficiary() {
+    const beneficiary = menuBeneficiary.value;
+    rowMenuId.value = null;
+    if (beneficiary) openEditModal(beneficiary);
+}
+
+function deleteMenuBeneficiary() {
+    const beneficiary = menuBeneficiary.value;
+    rowMenuId.value = null;
+    if (beneficiary) deleteBeneficiary(beneficiary);
 }
 
 function toggleSelected(id) {
@@ -248,8 +349,15 @@ function setBulkStatus(status) {
     });
 }
 
-function bulkDelete() {
-    if (!selectedIds.value.length || !window.confirm(`Delete ${selectedIds.value.length} selected beneficiaries? This cannot be undone.`)) return;
+async function bulkDelete() {
+    if (!selectedIds.value.length) return;
+    const confirmed = await askForConfirmation({
+        title: `Delete ${selectedIds.value.length} beneficiaries?`,
+        message: 'This action cannot be undone. Beneficiaries with distribution history will be kept to preserve records.',
+        confirmLabel: 'Delete selected',
+        danger: true,
+    });
+    if (!confirmed) return;
     bulkForm.ids = [...selectedIds.value];
     bulkForm.post(routes.value.beneficiariesBulkDelete, {
         preserveScroll: true,
@@ -269,10 +377,14 @@ function showQr(beneficiary) {
     qrModal.value?.showModal();
 }
 
-function generateQr(beneficiary) {
+async function generateQr(beneficiary) {
     rowMenuId.value = null;
-    if (!window.confirm(`Generate a QR code for ${beneficiary.full_name}?`)) return;
-    router.post(routes.value.qrGenerate.replace('__ID__', encodeURIComponent(beneficiary.id)), {}, { preserveScroll: true });
+    const confirmed = await askForConfirmation({
+        title: 'Generate QR code?',
+        message: `Create a new verification QR code for ${beneficiary.full_name}?`,
+        confirmLabel: 'Generate QR code',
+    });
+    if (confirmed) router.post(routes.value.qrGenerate.replace('__ID__', encodeURIComponent(beneficiary.id)), {}, { preserveScroll: true });
 }
 
 function sortBy(field) {
@@ -400,11 +512,11 @@ function priorityClass(priority) {
                     <button type="button" class="row-action-item" @click="toggleSelected(menuBeneficiary.id); rowMenuId = null">{{ selectedIds.includes(menuBeneficiary.id) ? 'Unmark record' : 'Mark record' }}</button>
                     <div class="bulk-action-divider"/>
                     <button type="button" class="row-action-item" @click="showDetails(menuBeneficiary)">View details</button>
-                    <button type="button" class="row-action-item" @click="rowMenuId = null; openEditModal(menuBeneficiary)">Edit</button>
+                    <button type="button" class="row-action-item" @click="editMenuBeneficiary">Edit</button>
                     <button v-if="menuBeneficiary.qr_code" type="button" class="row-action-item" @click="showQr(menuBeneficiary)">View QR code</button>
                     <button v-else type="button" class="row-action-item" @click="generateQr(menuBeneficiary)">Generate QR</button>
                     <div class="bulk-action-divider"/>
-                    <button type="button" class="row-action-item row-action-danger" @click="rowMenuId = null; deleteBeneficiary(menuBeneficiary)">Delete</button>
+                    <button type="button" class="row-action-item row-action-danger" @click="deleteMenuBeneficiary">Delete</button>
                 </div>
             </div>
         </Teleport>
@@ -412,12 +524,14 @@ function priorityClass(priority) {
     </section>
 
     <AdminModal ref="beneficiaryModal" class="form-modal" @click.self="beneficiaryModal?.close()">
-        <div class="modal-title"><div><h3>{{ editingId ? 'Edit beneficiary' : 'Add beneficiary' }}</h3><p>{{ editingId ? 'Update beneficiary information.' : 'Create a barangay beneficiary record.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="beneficiaryModal?.close()">×</button></div>
+        <div class="modal-title"><div><h3>{{ editingId ? 'Edit beneficiary' : 'Add beneficiary' }}</h3><p>{{ editingId ? 'Update beneficiary information.' : 'Saving creates the beneficiary record and login account. Manage staff accounts under Users.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="beneficiaryModal?.close()">×</button></div>
         <form @submit.prevent="saveBeneficiary">
-            <label>Full name<input v-model="form.full_name" maxlength="255" placeholder="Enter full name" required :class="{ 'input-error': form.errors.full_name }"><small v-if="form.errors.full_name" class="field-error">{{ form.errors.full_name }}</small></label>
-            <label>Contact number<input v-model="form.contact_number" type="tel" inputmode="tel" placeholder="09xx-xxx-xxxx or +63..." :class="{ 'input-error': form.errors.contact_number }"><small v-if="form.errors.contact_number" class="field-error">{{ form.errors.contact_number }}</small></label>
+            <div class="form-row"><label>First name<input v-model="form.first_name" maxlength="100" placeholder="First name" autocomplete="given-name" required></label><label>Middle name (optional)<input v-model="form.middle_name" maxlength="100" placeholder="Middle name" autocomplete="additional-name"></label></div>
+            <div class="form-row"><label>Last name<input v-model="form.last_name" maxlength="100" placeholder="Last name" autocomplete="family-name" required></label><label>Suffix (optional)<input v-model="form.suffix" maxlength="20" placeholder="Jr., Sr., III"></label></div>
+            <small v-if="form.errors.full_name" class="field-error">{{ form.errors.full_name }}</small>
+            <label>Contact number<div class="phone-input"><span aria-hidden="true">+63</span><input v-model="form.contact_number" type="tel" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="9xxxxxxxxx" @input="sanitizePhoneInput" :class="{ 'input-error': form.errors.contact_number }"></div><small v-if="form.errors.contact_number" class="field-error">{{ form.errors.contact_number }}</small></label>
             <label>Address<input v-model="form.address" maxlength="255" placeholder="Enter complete address"><small v-if="form.errors.address" class="field-error">{{ form.errors.address }}</small></label>
-            <div class="form-row"><label>Household size<input v-model="form.household_size" type="number" min="1" max="99" placeholder="Members"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
+            <div class="form-row"><label>Household size<input v-model="form.household_size" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="1–99 members" @input="sanitizeHouseholdSize" :class="{ 'input-error': form.errors.household_size }"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
             <label>Status<select v-model="form.status" required><option>Active</option><option>Inactive</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
 
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="beneficiaryModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update beneficiary' : 'Save beneficiary' }}</button></div>
@@ -464,8 +578,12 @@ function priorityClass(priority) {
         </div>
         <div class="credentials-content">
             <div class="credential-card">
-                <label>Username <span>Beneficiary number</span></label>
+                <label>Username <span>Based on beneficiary name</span></label>
                 <div class="credential-value">{{ credentials.username }}</div>
+            </div>
+            <div class="credential-card">
+                <label>Beneficiary code</label>
+                <div class="credential-value">{{ credentials.beneficiary_no }}</div>
             </div>
             <div class="credential-card">
                 <label>Temporary password</label>
@@ -480,6 +598,7 @@ function priorityClass(priority) {
             <button type="button" class="primary-action" @click="closeCredentialsModal">Done, I’ve saved them</button>
         </div>
     </AdminModal>
+
 </template>
 
 <style scoped>

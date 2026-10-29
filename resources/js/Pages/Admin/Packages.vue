@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AdminModal from '../../Components/AdminModal.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
+import { appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -97,9 +98,13 @@ function savePackage() {
     else form.post(routes.value.packageStore, options);
 }
 
-function deletePackage(item) {
-    if (!window.confirm(`Delete “${item.package_name}”? This cannot be undone.`)) return;
-    router.delete(routes.value.packageDelete.replace('__ID__', encodeURIComponent(item.id)), { preserveScroll: true });
+async function deletePackage(item) {
+    const confirmed = await appConfirm(`Delete “${item.package_name}”? This cannot be undone.`, {
+        title: 'Delete package?',
+        confirmLabel: 'Delete package',
+        danger: true,
+    });
+    if (confirmed) router.delete(routes.value.packageDelete.replace('__ID__', encodeURIComponent(item.id)), { preserveScroll: true });
 }
 </script>
 

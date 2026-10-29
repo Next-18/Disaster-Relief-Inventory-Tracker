@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\BeneficiaryController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DistributionController;
@@ -33,6 +34,7 @@ Route::get('/auth/me', [AuthController::class, 'me'])->middleware('auth:sanctum'
 Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->middleware('auth:sanctum');
 Route::get('/notifications', [NotificationController::class, 'index'])->middleware('auth:sanctum');
 Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])->middleware('auth:sanctum');
+Route::get('/announcements', [AnnouncementController::class, 'index'])->middleware('auth:sanctum');
 
 // Dashboard routes
 Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->middleware('auth:sanctum');
@@ -54,6 +56,7 @@ Route::get('/packages/available', [PackageController::class, 'available'])->midd
 // Distribution routes
 Route::get('/distributions', [DistributionController::class, 'index'])->middleware('auth:sanctum');
 Route::post('/distributions', [DistributionController::class, 'store'])->middleware(['auth:sanctum', 'admin']);
+Route::post('/distributions/release-pending', [DistributionController::class, 'releasePending'])->middleware(['auth:sanctum', 'distribution-staff']);
 Route::get('/distributions/{id}', [DistributionController::class, 'show'])->middleware('auth:sanctum');
 Route::get('/distributions/beneficiary/{beneficiaryId}', [DistributionController::class, 'byBeneficiary'])->middleware('auth:sanctum');
 Route::post('/distributions/record', [DistributionController::class, 'record'])->middleware(['auth:sanctum', 'admin']);

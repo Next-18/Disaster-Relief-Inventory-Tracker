@@ -58,7 +58,7 @@ class BeneficiaryController extends Controller
 
     public function showByQrCode($qrCode)
     {
-        $beneficiary = Beneficiary::where('beneficiary_no', $qrCode)->firstOrFail();
+        $beneficiary = Beneficiary::query()->forQrPayload($qrCode)->firstOrFail();
         abort_unless($this->mayViewBeneficiary(request()->user(), (int) $beneficiary->id) || request()->user()->canRecordDistributions(), 403);
 
         return response()->json([
@@ -81,7 +81,7 @@ class BeneficiaryController extends Controller
 
         $validated = $request->validate([
             'full_name' => ['sometimes', 'required', 'string', 'max:255'],
-            'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-\s()]*$/'],
+            'contact_number' => ['nullable', 'string', 'regex:/^\+639\d{9}$/'],
             'address' => ['nullable', 'string', 'max:255'],
             'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
             'current_password' => ['nullable', 'required_with:new_password', 'string'],

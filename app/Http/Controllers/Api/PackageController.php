@@ -12,6 +12,11 @@ class PackageController extends Controller
     public function index(Request $request)
     {
         $query = ReliefPackage::query();
+        $canViewAllPackages = $request->user()->canReleasePackages();
+
+        if (! $canViewAllPackages) {
+            $query->where('status', 'Available');
+        }
 
         if ($request->filled('search')) {
             $search = $request->input('search');
@@ -22,7 +27,7 @@ class PackageController extends Controller
             });
         }
 
-        if ($request->filled('status') && $request->status !== 'all') {
+        if ($canViewAllPackages && $request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
         }
 
@@ -31,6 +36,11 @@ class PackageController extends Controller
         }
 
         $packages = $query->with('inventoryItems:id,item_name,unit,quantity')->orderBy('package_name')->get();
+        if (! $canViewAllPackages) {
+            $packages = $packages
+                ->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)
+                ->values();
+        }
 
         return response()->json([
             'success' => true,

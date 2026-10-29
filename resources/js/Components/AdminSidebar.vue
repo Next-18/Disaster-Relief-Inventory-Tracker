@@ -19,6 +19,7 @@ const allLinks = [
     { label: 'Lost QR', href: routes.value.lostQr, icon: 'lost' },
     { label: 'Distribution', href: routes.value.distribution, icon: 'distribution' },
     { label: 'Support', href: routes.value.support, icon: 'support' },
+    { label: 'Announcements', href: routes.value.announcements, icon: 'announcement' },
     { label: 'Reports', href: routes.value.reports, icon: 'reports' },
     { label: 'Audit Logs', href: routes.value.auditLogs, icon: 'audit' },
     { label: 'Users', href: routes.value.users, icon: 'users' },
@@ -29,7 +30,7 @@ const groups = computed(() => {
         return [
             { label: 'Overview', links: allLinks.filter((link) => link.label === 'Dashboard') },
             { label: 'Relief Operations', links: allLinks.filter((link) => ['Beneficiaries', 'Deliveries', 'Inventory', 'Packages', 'Distribution', 'QR Codes', 'Lost QR'].includes(link.label)) },
-            { label: 'Monitoring', links: allLinks.filter((link) => ['Reports', 'Support'].includes(link.label)) },
+            { label: 'Monitoring', links: allLinks.filter((link) => ['Reports', 'Support', 'Announcements'].includes(link.label)) },
             { label: 'Administration', links: allLinks.filter((link) => ['Users', 'Audit Logs', 'Settings'].includes(link.label)) },
         ];
     }
@@ -37,6 +38,7 @@ const groups = computed(() => {
         return [
             { label: 'Relief Operations', links: allLinks.filter((link) => ['Deliveries', 'Inventory', 'Distribution'].includes(link.label)) },
             { label: 'Help', links: allLinks.filter((link) => link.label === 'Support') },
+            { label: 'Updates', links: allLinks.filter((link) => link.label === 'Announcements') },
         ];
     }
     return [
@@ -78,6 +80,7 @@ const isActive = (href) => Boolean(href) && currentPath.value === new URL(href, 
                             <template v-else-if="link.icon === 'lost'"><circle cx="12" cy="12" r="8"/><path d="m8 8 8 8M9 12h6"/></template>
                             <template v-else-if="link.icon === 'distribution'"><path d="M4 11h16v8H4zM7 11V7h10v4M8 15h8"/></template>
                             <template v-else-if="link.icon === 'support'"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h5"/></template>
+                            <template v-else-if="link.icon === 'announcement'"><path d="M4 14V9a1 1 0 0 1 1-1h3l8-4v14l-8-4H5a1 1 0 0 1-1-1ZM8 14l1.5 6H13l-2-5M19 8l2-2M19 15l2 2M19 11h3"/></template>
                             <template v-else-if="link.icon === 'reports'"><path d="M4 20V4M4 20h16M8 17v-5M12 17V7M16 17v-8"/></template>
                             <template v-else-if="link.icon === 'audit'"><path d="M7 3h10v18H7zM10 7h4M10 11h4M10 15h4M4 7h3M4 11h3M4 15h3"/></template>
                             <template v-else-if="link.icon === 'users'"><path d="M16 10c0-2.2-1.8-4-4-4s-4 1.8-4 4c0 1.5.8 2.8 2 3.5V16h4v-2.5c1.2-.7 2-2 2-3.5zM9 12c-1.7 0-3-1.3-3-3s1.3-3 3-3c.6 0 1.1.2 1.6.5.6-.9 1.5-1.5 2.4-1.5 1.7 0 3 1.3 3 3s-1.3 3-3 3c-.6 0-1.1-.2-1.6-.5-.6.9-1.5 1.5-2.4 1.5z"/></template>

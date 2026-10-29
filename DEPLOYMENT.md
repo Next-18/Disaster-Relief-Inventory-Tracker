@@ -7,7 +7,7 @@ This project is currently configured for local development. Do not copy the loca
 - Provision a production database and a dedicated database account with only the permissions the application needs. Do not use MySQL `root`.
 - Set production environment values in the server's secret store or `.env`: `APP_ENV=production`, `APP_DEBUG=false`, the public `APP_URL=https://...`, `SESSION_SECURE_COOKIE=true`, and a production-only `APP_KEY`.
 - Never commit or share `.env`, `APP_KEY`, database passwords, or `ADMIN_SEED_PASSWORD`. Generate the production key once; do not regenerate it during routine releases.
-- Set `SANCTUM_TOKEN_EXPIRATION` to the desired token lifetime in minutes (the default in this project is 43200 minutes / 30 days). Configure the host scheduler to run Laravel's scheduler at least once per minute so expired-token pruning runs.
+- Set `SANCTUM_TOKEN_EXPIRATION` to the desired token lifetime in minutes (the default in this project is 43200 minutes / 30 days). Configure the host scheduler to run Laravel's scheduler at least once per minute so expired-token pruning and overdue distribution cleanup run.
 - New passwords must be at least 12 characters and include uppercase, lowercase, and numeric characters. Existing passwords remain usable until changed.
 - Point the mobile app's API base URL to the production HTTPS API. Keep the local LAN URL for local development only.
 - Create encrypted, access-controlled database backups and verify a restore before storing real beneficiary records.

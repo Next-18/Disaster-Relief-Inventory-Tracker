@@ -6,11 +6,28 @@ use Illuminate\Database\Eloquent\Model;
 
 class Distribution extends Model
 {
-    protected $fillable = ['beneficiary_id', 'package_id', 'date_released', 'status', 'notes', 'distributed_by', 'offline_claim_id'];
+    protected $fillable = ['beneficiary_id', 'package_id', 'date_released', 'start_date', 'deadline', 'status', 'notes', 'distributed_by'];
 
     protected $casts = [
         'date_released' => 'date',
+        'start_date' => 'date',
+        'deadline' => 'date',
     ];
+
+    public function releaseWindowError(): ?string
+    {
+        $releaseDate = today()->toDateString();
+
+        if ($this->start_date && $releaseDate < $this->start_date->toDateString()) {
+            return 'This distribution has not started yet. It opens on '.$this->start_date->format('M j, Y').'.';
+        }
+
+        if ($this->deadline && $releaseDate > $this->deadline->toDateString()) {
+            return 'The deadline for this distribution was '.$this->deadline->format('M j, Y').'.';
+        }
+
+        return null;
+    }
     
     public function beneficiary()
     {

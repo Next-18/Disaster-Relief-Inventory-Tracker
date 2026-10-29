@@ -29,6 +29,11 @@ class InventoryItem extends Model
             ->withTimestamps();
     }
 
+    public function stockDeliveryItems()
+    {
+        return $this->hasMany(StockDeliveryItem::class);
+    }
+
     public function getStatusAttribute($value): string
     {
         return $this->quantity <= $this->minimum_stock ? 'Low Stock' : 'In Stock';

@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\SupportController;
+use App\Http\Controllers\AnnouncementController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login');
@@ -21,6 +22,8 @@ Route::middleware(['auth', 'distribution-operator'])->group(function () {
 Route::patch('/admin/support/{ticket}', [SupportController::class, 'update'])
     ->middleware(['auth', 'admin'])->name('admin.support.update');
 Route::middleware(['auth', 'distribution-staff'])->group(function () {
+    Route::get('/admin/announcements', [AnnouncementController::class, 'index'])->name('admin.announcements');
+    Route::post('/admin/announcements', [AnnouncementController::class, 'store'])->name('admin.announcements.store');
     Route::get('/admin/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
     Route::post('/admin/inventory/{id}/adjust-stock', [AdminController::class, 'adjustInventoryStock'])->name('admin.inventory.adjust-stock');
     Route::get('/admin/deliveries', [AdminController::class, 'deliveries'])->name('admin.deliveries');
@@ -30,11 +33,8 @@ Route::post('/admin/distribution', [AdminController::class, 'storeDistribution']
     ->middleware(['auth', 'admin'])->name('admin.distribution.store');
 Route::post('/admin/distribution/release-pending', [AdminController::class, 'releasePendingDistribution'])
     ->middleware(['auth', 'distribution-staff'])->name('admin.distribution.release-pending');
-Route::get('/admin/distribution/offline-assignments', [AdminController::class, 'offlineAssignments'])
-    ->middleware(['auth', 'distribution-staff'])->name('admin.distribution.offline-assignments');
-Route::post('/admin/distribution/offline-sync', [AdminController::class, 'syncOfflineClaims'])
-    ->middleware(['auth', 'distribution-staff'])->name('admin.distribution.offline-sync');
 Route::middleware(['auth', 'admin'])->group(function () {
+    Route::delete('/admin/announcements/{announcement}', [AnnouncementController::class, 'destroy'])->name('admin.announcements.destroy');
     Route::get('/admin/beneficiaries', [AdminController::class, 'beneficiaries'])->name('admin.beneficiaries');
     Route::post('/admin/beneficiaries', [AdminController::class, 'storeBeneficiary'])->name('admin.beneficiaries.store');
     Route::put('/admin/beneficiaries/{id}', [AdminController::class, 'updateBeneficiary'])->name('admin.beneficiaries.update');

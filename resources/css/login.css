@@ -17,6 +17,7 @@
 .login-page h2 { margin: 0; color: #153a67; font-size: 35px; letter-spacing: -.045em; line-height: 1.16; }
 .login-page .intro { margin: 13px 0 32px; max-width: 330px; color: #64748c; font-size: 15px; line-height: 1.55; }
 .login-page .notice { margin: -14px 0 20px; padding: 11px 13px; border-radius: 10px; font-size: 13px; color: #a33c21; background: #fff4ec; border: 1px solid #ffd7bd; }
+.login-page .success-notice { color: #17633e; background: #edfaf2; border-color: #b9e7cb; }
 .login-page label { display: block; margin-bottom: 8px; color: #52627b; font-size: 13px; font-weight: 700; }
 .login-page .field { width: 100%; height: 52px; margin-bottom: 20px; padding: 0 15px; color: #1d3e69; border: 1px solid #cfdaea; border-radius: 12px; outline: none; font-size: 15px; transition: .2s; }
 .login-page .field::placeholder { color: #94a3b8; }

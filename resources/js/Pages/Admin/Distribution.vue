@@ -5,6 +5,7 @@ import AdminModal from '../../Components/AdminModal.vue';
 import InertiaPagination from '../../Components/InertiaPagination.vue';
 import QrScannerModal from '../../Components/QrScannerModal.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
+import { appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -13,15 +14,18 @@ const props = defineProps({
     beneficiaries: { type: Array, required: true },
     packages: { type: Array, required: true },
     search: { type: String, default: '' },
+    status: { type: String, default: 'all' },
     today: { type: String, required: true },
     canManageDistributions: { type: Boolean, default: false },
     canAssignDistributions: { type: Boolean, default: false },
     canReleasePackages: { type: Boolean, default: false },
+    canViewDistributionHistory: { type: Boolean, default: false },
 });
 
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
 const searchTerm = ref(props.search);
+const statusFilter = ref(props.status);
 const modal = ref(null);
 const recordModalOpen = ref(false);
 const scannerModal = ref(null);
@@ -32,17 +36,8 @@ const pendingBeneficiary = ref(null);
 const pendingReleaseOptions = ref([]);
 const pendingReleaseError = ref('');
 const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine);
-const offlineAssignments = ref([]);
-const offlinePreparedAt = ref('');
-const offlineClaims = ref([]);
-const confirmedDeviceClaims = ref([]);
-const offlineMessage = ref('');
-const offlineBusy = ref(false);
-// Confirmed claims on this page remain blocked if the connection drops.
-// The server remains authoritative for claims made on any other device.
-const confirmedClaimsThisSession = new Set();
 const editingId = ref(null);
-const form = useForm({ recipient_mode: 'individual', beneficiary_id: '', priority_type: '', package_id: '', date_released: '', status: 'Released', notes: '' });
+const form = useForm({ recipient_mode: 'individual', beneficiary_id: '', priority_type: '', package_id: '', start_date: '', deadline: '', status: 'Pending', notes: '' });
 const rows = computed(() => props.distributions.data ?? []);
 const recipientCount = computed(() => {
     if (form.recipient_mode === 'individual') return form.beneficiary_id ? 1 : 0;
@@ -65,11 +60,13 @@ const packageOptions = computed(() => {
 });
 let searchTimer;
 let lastSubmittedSearch = searchTerm.value.trim();
-const offlineKey = `relieftrack-offline-${page.props.auth?.user?.id ?? 'staff'}`;
 
 watch(() => props.search, (value) => {
     lastSubmittedSearch = (value ?? '').trim();
     searchTerm.value = value ?? '';
+});
+watch(() => props.status, (value) => {
+    statusFilter.value = value ?? 'all';
 });
 watch(searchTerm, () => {
     if (searchTerm.value.trim() === lastSubmittedSearch) return;
@@ -78,17 +75,6 @@ watch(searchTerm, () => {
 });
 
 onMounted(() => {
-    try {
-        const saved = JSON.parse(localStorage.getItem(offlineKey) ?? '{}');
-        offlineAssignments.value = Array.isArray(saved.assignments) ? saved.assignments : [];
-        offlineClaims.value = Array.isArray(saved.claims) ? saved.claims : [];
-        confirmedDeviceClaims.value = Array.isArray(saved.confirmed) ? saved.confirmed : [];
-        offlinePreparedAt.value = saved.preparedAt ?? '';
-    } catch {
-        offlineAssignments.value = [];
-        offlineClaims.value = [];
-        confirmedDeviceClaims.value = [];
-    }
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
     if (props.canAssignDistributions && new URLSearchParams(window.location.search).get('action') === 'add') {
@@ -108,92 +94,13 @@ function updateOnlineStatus() {
     isOnline.value = navigator.onLine;
 }
 
-function saveOfflineState() {
-    localStorage.setItem(offlineKey, JSON.stringify({
-        assignments: offlineAssignments.value,
-        claims: offlineClaims.value,
-        confirmed: confirmedDeviceClaims.value,
-        preparedAt: offlinePreparedAt.value,
-    }));
-}
-
-async function prepareOfflineDistribution() {
-    if (!isOnline.value) return;
-    offlineBusy.value = true;
-    offlineMessage.value = '';
-    try {
-        const response = await fetch(routes.value.distributionOfflineAssignments, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-        if (!response.ok) throw new Error('Could not download assigned households.');
-        const result = await response.json();
-        offlineAssignments.value = Array.isArray(result.data) ? result.data : [];
-        offlinePreparedAt.value = result.prepared_at ?? new Date().toISOString();
-        saveOfflineState();
-        offlineMessage.value = `Saved ${offlineAssignments.value.length} pending assignment(s) on this device.`;
-    } catch (error) {
-        offlineMessage.value = error.message || 'Could not prepare offline data.';
-    } finally {
-        offlineBusy.value = false;
-    }
-}
-
-async function syncOfflineClaims() {
-    if (!isOnline.value || !offlineClaims.value.length || offlineBusy.value) return;
-    offlineBusy.value = true;
-    offlineMessage.value = '';
-    try {
-        const response = await fetch(routes.value.distributionOfflineSync, {
-            method: 'POST', credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '' },
-            body: JSON.stringify({ claims: offlineClaims.value.slice(0, 200).map(({ beneficiary_no, distribution_id, offline_claim_id }) => ({ beneficiary_no, distribution_id, offline_claim_id })) }),
-        });
-        if (!response.ok) throw new Error(response.status === 419 ? 'Your staff session expired. Sign in again, then sync.' : 'Could not sync offline claims.');
-        const result = await response.json();
-        const byId = new Map((result.results ?? []).map((item) => [Number(item.distribution_id), item]));
-        offlineClaims.value.forEach((claim) => {
-            if (byId.get(Number(claim.distribution_id))?.success) rememberConfirmedClaim(claim.beneficiary_no);
-        });
-        offlineClaims.value = offlineClaims.value
-            .map((claim) => ({ ...claim, syncMessage: byId.get(Number(claim.distribution_id))?.message ?? 'Awaiting server response.' }))
-            .filter((claim) => !byId.get(Number(claim.distribution_id))?.success);
-        saveOfflineState();
-        const confirmed = (result.results ?? []).filter((item) => item.success).length;
-        offlineMessage.value = `${confirmed} claim(s) confirmed. ${offlineClaims.value.length} need staff review or another sync.`;
-    } catch (error) {
-        offlineMessage.value = error.message || 'Could not sync offline claims.';
-    } finally {
-        offlineBusy.value = false;
-    }
-}
-
-function rememberConfirmedClaim(beneficiaryNo) {
-    const normalized = String(beneficiaryNo ?? '').trim().toUpperCase();
-    if (!normalized) return;
-    confirmedClaimsThisSession.add(normalized);
-    const claimDate = localDateKey();
-    if (!confirmedDeviceClaims.value.some((claim) => claim.beneficiary_no === normalized && claim.date === claimDate)) {
-        confirmedDeviceClaims.value.push({ beneficiary_no: normalized, date: claimDate });
-    }
-    saveOfflineState();
-}
-
-function localDateKey() {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function clearOfflineData() {
-    if (offlineClaims.value.length) return;
-    offlineAssignments.value = [];
-    confirmedDeviceClaims.value = [];
-    offlinePreparedAt.value = '';
-    offlineMessage.value = 'Prepared offline data cleared from this device.';
-    saveOfflineState();
-}
-
 function searchDistributions(replace = false) {
     lastSubmittedSearch = searchTerm.value.trim();
     clearTimeout(searchTimer);
-    router.get(routes.value.distribution, { search: lastSubmittedSearch || undefined }, { preserveState: true, preserveScroll: true, replace });
+    router.get(routes.value.distribution, {
+        search: lastSubmittedSearch || undefined,
+        status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+    }, { preserveState: true, preserveScroll: true, replace });
 }
 
 function openAddModal(beneficiaryId = '') {
@@ -201,8 +108,9 @@ function openAddModal(beneficiaryId = '') {
     editingId.value = null;
     form.reset();
     form.clearErrors();
-    form.date_released = props.today;
-    form.status = 'Released';
+    form.start_date = props.today;
+    form.deadline = props.today;
+    form.status = 'Pending';
     form.recipient_mode = 'individual';
     form.priority_type = '';
     if (beneficiaryId) form.beneficiary_id = beneficiaryId;
@@ -218,13 +126,18 @@ function openEditModal(distribution) {
     form.recipient_mode = 'individual';
     form.priority_type = '';
     form.package_id = distribution.package_id ?? '';
-    form.date_released = String(distribution.date_released).slice(0, 10);
+    form.start_date = distribution.start_date ?? String(distribution.date_released).slice(0, 10);
+    form.deadline = distribution.deadline ?? String(distribution.date_released).slice(0, 10);
     form.status = distribution.status;
     form.notes = distribution.notes ?? '';
     modal.value?.showModal();
 }
 
 function openScanner() {
+    if (!isOnline.value) {
+        scanError.value = 'An internet connection is required to verify a beneficiary.';
+        return;
+    }
     scanError.value = '';
     scannerModal.value?.open();
 }
@@ -235,26 +148,13 @@ function closeBeneficiaryCheck() {
 }
 
 async function handleScannedCode(text) {
+    if (!isOnline.value) {
+        scanError.value = 'An internet connection is required to verify a beneficiary.';
+        return;
+    }
+
     const code = (text ?? '').trim();
-    const normalizedCode = code.toUpperCase();
-    const todayKey = localDateKey();
-    if (confirmedClaimsThisSession.has(normalizedCode) || confirmedDeviceClaims.value.some((claim) => claim.beneficiary_no === normalizedCode && claim.date === todayKey)) {
-        alreadyClaimedMessage.value = 'This beneficiary was already confirmed as claimed on this device today.';
-        document.getElementById('already-claimed-modal')?.showModal();
-        return;
-    }
-    const queued = offlineClaims.value.find((claim) => claim.beneficiary_no.toUpperCase() === normalizedCode);
-    if (queued) {
-        alreadyClaimedMessage.value = 'A claim for this beneficiary is already saved on this device and is waiting to sync.';
-        document.getElementById('already-claimed-modal')?.showModal();
-        return;
-    }
-    if (!navigator.onLine) {
-        if (!openOfflineAssignments(normalizedCode)) scanError.value = 'This QR is not in the offline list on this device. Reconnect or refer the person to staff for manual review.';
-        return;
-    }
     let match = null;
-    let lookupUnavailable = false;
     let response;
     try {
         response = await fetch(`/admin/distribution/lookup?code=${encodeURIComponent(code)}`, {
@@ -262,12 +162,11 @@ async function handleScannedCode(text) {
             credentials: 'same-origin',
         });
     } catch {
-        lookupUnavailable = true;
-    }
-    if (lookupUnavailable && openOfflineAssignments(normalizedCode)) {
+        scanError.value = 'Could not reach the server. Check your connection and scan again.';
         return;
     }
-    if (response?.ok) {
+
+    if (response.ok) {
         try {
             const result = await response.json();
             match = result.data ?? null;
@@ -276,7 +175,9 @@ async function handleScannedCode(text) {
         }
     }
     if (!match) {
-        scanError.value = `No active beneficiary found for "${code}".`;
+        scanError.value = response.status === 404
+            ? `No active beneficiary found for "${code}".`
+            : 'Could not verify this beneficiary with the server. Check your connection and try again.';
         return;
     }
     scanError.value = '';
@@ -289,7 +190,7 @@ async function handleScannedCode(text) {
     }
     if (props.canReleasePackages && match.pending_distributions?.length) {
         scannerModal.value?.close();
-        pendingBeneficiary.value = match;
+        pendingBeneficiary.value = { ...match, qr_payload: code };
         pendingReleaseOptions.value = match.pending_distributions;
         pendingReleaseError.value = '';
         if (pendingReleaseOptions.value.length === 1) releasePendingDistribution(pendingReleaseOptions.value[0]);
@@ -306,51 +207,19 @@ async function handleScannedCode(text) {
     }
 }
 
-function openOfflineAssignments(normalizedCode) {
-    const assignments = offlineAssignments.value.filter((item) => item.beneficiary_no.toUpperCase() === normalizedCode);
-    if (!assignments.length) return false;
-    isOnline.value = false;
-    scannerModal.value?.close();
-    pendingBeneficiary.value = { beneficiary_no: assignments[0].beneficiary_no, full_name: assignments[0].full_name };
-    pendingReleaseOptions.value = assignments.map((item) => ({ id: item.distribution_id, package_name: item.package_name, assigned_date: item.assigned_date }));
-    pendingReleaseError.value = '';
-    if (pendingReleaseOptions.value.length === 1) releasePendingDistribution(pendingReleaseOptions.value[0]);
-    else document.getElementById('pending-release-modal')?.showModal();
-    return true;
-}
-
 function releasePendingDistribution(assignment) {
     if (!pendingBeneficiary.value || !assignment) return;
-    pendingReleaseError.value = '';
     if (!isOnline.value) {
-        if (offlineClaims.value.some((claim) => Number(claim.distribution_id) === Number(assignment.id))) {
-            pendingReleaseError.value = 'This package is already recorded on this device.';
-            return;
-        }
-        offlineClaims.value.push({
-            beneficiary_no: pendingBeneficiary.value.beneficiary_no,
-            full_name: pendingBeneficiary.value.full_name,
-            distribution_id: assignment.id,
-            offline_claim_id: createOfflineClaimId(),
-            package_name: assignment.package_name,
-            recorded_at: new Date().toISOString(),
-            syncMessage: 'Saved offline. Not confirmed until synced.',
-        });
-        saveOfflineState();
-        offlineMessage.value = 'Claim saved offline. It is pending and not yet confirmed by the database.';
-        document.getElementById('pending-release-modal')?.close();
-        pendingReleaseOptions.value = [];
-        pendingBeneficiary.value = null;
+        pendingReleaseError.value = 'An internet connection is required to release this package.';
         return;
     }
+    pendingReleaseError.value = '';
     router.post(routes.value.distributionReleasePending, {
-        beneficiary_no: pendingBeneficiary.value.beneficiary_no,
+        beneficiary_no: pendingBeneficiary.value.qr_payload,
         distribution_id: assignment.id,
     }, {
         preserveScroll: true,
         onSuccess: () => {
-            const code = pendingBeneficiary.value?.beneficiary_no?.trim().toUpperCase();
-            if (code) rememberConfirmedClaim(code);
             document.getElementById('pending-release-modal')?.close();
             if (recordModalOpen.value) modal.value?.close();
             pendingReleaseOptions.value = [];
@@ -362,23 +231,24 @@ function releasePendingDistribution(assignment) {
     });
 }
 
-function createOfflineClaimId() {
-    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
-        const random = Math.random() * 16 | 0;
-        return (character === 'x' ? random : (random & 0x3 | 0x8)).toString(16);
-    });
-}
-
 function saveDistribution() {
     const options = { preserveScroll: true, onSuccess: () => { modal.value?.close(); form.reset(); editingId.value = null; } };
     if (editingId.value) form.put(routes.value.distributionUpdate.replace('__ID__', encodeURIComponent(editingId.value)), options);
     else form.post(routes.value.distributionStore, options);
 }
 
-function deleteDistribution(distribution) {
-    if (!window.confirm(`Delete this distribution record for ${distribution.beneficiary?.full_name ?? 'this beneficiary'}? This cannot be undone.`)) return;
-    router.delete(routes.value.distributionDelete.replace('__ID__', encodeURIComponent(distribution.id)), { preserveScroll: true });
+async function deleteDistribution(distribution) {
+    const isPending = distribution.status === 'Pending';
+    const confirmed = await appConfirm(
+        isPending
+            ? `Cancel this package assignment for ${distribution.beneficiary?.full_name ?? 'this beneficiary'}? The history record will remain, reserved stock will be restored, and the beneficiary will be notified.`
+            : `Void this released distribution record for ${distribution.beneficiary?.full_name ?? 'this beneficiary'}? The history record will remain and stock will not be restored.`,
+        {
+        title: isPending ? 'Cancel assignment?' : 'Void distribution record?',
+        confirmLabel: isPending ? 'Cancel assignment' : 'Void record',
+        danger: true,
+    });
+    if (confirmed) router.delete(routes.value.distributionDelete.replace('__ID__', encodeURIComponent(distribution.id)), { preserveScroll: true });
 }
 
 function formatDate(value) {
@@ -388,54 +258,51 @@ function formatDate(value) {
 
 <template>
     <section class="module-heading">
-        <div><h2>{{ canAssignDistributions ? 'Distribution records' : canReleasePackages ? 'Beneficiary check-in' : 'Beneficiary verification' }}</h2><p>{{ canAssignDistributions ? 'Assign packages to beneficiaries or record a direct release.' : canReleasePackages ? 'Scan a beneficiary QR code to verify their identity and release an assigned package. New assignments are handled by an administrator.' : 'Scan a beneficiary QR code to verify their identity before directing them to the distribution desk.' }}</p></div>
+        <div><h2>{{ canAssignDistributions ? 'Distribution records' : canReleasePackages ? 'Beneficiary check-in' : canViewDistributionHistory ? 'Distribution history' : 'Beneficiary verification' }}</h2><p>{{ canAssignDistributions ? 'Assign packages to beneficiaries or record a direct release.' : canReleasePackages ? 'Scan a beneficiary QR code to verify their identity and release an assigned package. New assignments are handled by an administrator.' : canViewDistributionHistory ? 'Review package assignments and releases. Staff handle package check-in and release.' : 'Scan a beneficiary QR code to verify their identity before directing them to the distribution desk.' }}</p></div>
         <div class="module-heading-actions">
-            <button class="add-button" type="button" @click="openScanner">{{ canReleasePackages ? 'Scan QR' : 'Scan to verify' }}</button>
-            <button v-if="canAssignDistributions" class="add-button" type="button" @click="openAddModal()"><span>+</span> Record Distribution</button>
+            <button v-if="canReleasePackages" class="add-button" type="button" :disabled="!isOnline" @click="openScanner">{{ !isOnline ? 'Connection required' : 'Scan QR' }}</button>
+            <button v-if="canAssignDistributions" class="add-button" type="button" :disabled="!isOnline" @click="openAddModal()"><span>+</span> Record Distribution</button>
         </div>
     </section>
 
-    <section v-if="canReleasePackages" class="panel offline-panel">
-        <div class="offline-panel-copy">
-            <strong>{{ isOnline ? 'Online' : 'Offline mode' }}</strong>
-            <span v-if="offlinePreparedAt">Offline list prepared {{ formatDate(offlinePreparedAt) }} · {{ offlineAssignments.length }} assignment(s)</span>
-            <span v-else>Prepare the assigned QR list before signal is lost. Keep this page open during offline distribution.</span>
-            <span v-if="offlineClaims.length">{{ offlineClaims.length }} claim(s) saved on this device; they are not confirmed yet.</span>
-            <span v-if="offlineMessage" role="status">{{ offlineMessage }}</span>
-            <span v-for="claim in offlineClaims" :key="claim.distribution_id" class="offline-claim-status">{{ claim.full_name }} — {{ claim.package_name }}: {{ claim.syncMessage }}</span>
-        </div>
-        <div class="offline-actions">
-            <button class="action-btn" type="button" :disabled="!isOnline || offlineBusy" @click="prepareOfflineDistribution">{{ offlineBusy ? 'Working…' : 'Prepare for offline' }}</button>
-            <button v-if="offlineClaims.length" class="add-button" type="button" :disabled="!isOnline || offlineBusy" @click="syncOfflineClaims">Sync pending claims</button>
-            <button v-if="isOnline && !offlineClaims.length && offlineAssignments.length" class="action-btn" type="button" @click="clearOfflineData">Clear device data</button>
-        </div>
+    <section class="connection-status" :class="isOnline ? 'is-connected' : 'is-disconnected'" role="status">
+        <span class="connection-indicator"></span>
+        <div><strong>{{ isOnline ? 'Online' : 'Connection unavailable' }}</strong><span>{{ isOnline ? 'Check-ins and releases are confirmed by the server.' : 'Connect to the internet to verify beneficiaries and record releases.' }}</span></div>
     </section>
 
     <section v-if="!canReleasePackages" class="panel record-panel">
-        <div class="panel-heading"><div><h3>Check-in station</h3><p>Scan the beneficiary QR code, confirm the name and beneficiary number, then direct them to staff for package release.</p></div></div>
+        <div class="checkin-station">
+            <div class="checkin-station-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h5v5H4zM15 4h5v5h-5zM4 15h5v5H4zM15 15h2v2h-2zM19 15v5M15 19h2"/><path d="M11 4v3M11 11h3M4 11v2M11 15v5"/></svg></div>
+            <div class="checkin-station-copy"><p class="checkin-eyebrow">Beneficiary check-in</p><h3>Verify a beneficiary</h3><p>Scan their QR code, confirm the name and beneficiary number, then direct them to the release desk.</p>
+                <ol><li>Ask to see the beneficiary QR code.</li><li>Scan and confirm their details.</li><li>Send them to staff to receive their assigned package.</li></ol>
+                <button class="primary-action checkin-scan-button" type="button" :disabled="!isOnline" @click="openScanner">{{ isOnline ? 'Scan QR code' : 'Connection required' }}</button>
+            </div>
+        </div>
     </section>
 
-    <section v-if="canReleasePackages" class="panel record-panel">
+    <section v-if="canViewDistributionHistory" class="panel record-panel">
         <div class="panel-heading">
-            <div><h3>Distribution history</h3><p>{{ distributions.total }}{{ search ? ' matching' : ' total' }} distribution records</p></div>
+            <div><h3>Distribution history</h3><p>{{ distributions.total }}{{ search || statusFilter !== 'all' ? ' matching' : ' total' }} distribution records</p></div>
             <form class="module-search-form" role="search" @submit.prevent="searchDistributions()">
                 <label class="sr-only" for="distribution-search">Search distributions</label>
-                <input id="distribution-search" v-model="searchTerm" class="table-search" type="search" placeholder="Search beneficiary, package..." aria-label="Search distributions">
+                <select v-model="statusFilter" class="filter-select distribution-status-filter" aria-label="Filter distributions by status" @change="searchDistributions(true)"><option value="all">All statuses</option><option value="Pending">Pending</option><option value="Released">Released</option><option value="Cancelled">Cancelled</option><option value="Voided">Voided</option></select>
+                <input id="distribution-search" v-model="searchTerm" class="table-search distribution-search" type="search" placeholder="Search beneficiary, package..." aria-label="Search distributions">
                 <button class="action-btn" type="submit">Search</button>
-                <button v-if="searchTerm" class="filter-clear" type="button" @click="searchTerm = ''; searchDistributions()">Clear</button>
+                <button v-if="searchTerm || statusFilter !== 'all'" class="filter-clear" type="button" @click="searchTerm = ''; statusFilter = 'all'; searchDistributions()">Clear</button>
             </form>
         </div>
-        <div class="table-wrap"><table class="record-table">
-            <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DATE RELEASED</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+        <div class="table-wrap"><table class="record-table field-distribution-table">
+            <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DISTRIBUTION WINDOW</th><th>DATE RELEASED</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
             <tbody>
                 <tr v-for="distribution in rows" :key="distribution.id">
-                    <td><b>{{ distribution.beneficiary?.full_name ?? 'Unknown Beneficiary' }}</b><small>{{ distribution.beneficiary?.beneficiary_no ?? 'N/A' }}</small></td>
-                    <td>{{ distribution.relief_package?.package_name ?? 'Unknown Package' }}</td>
-                    <td>{{ formatDate(distribution.date_released) }}</td>
-                    <td><span class="tag" :class="distribution.status === 'Released' ? 'success' : 'warning'">{{ distribution.status }}</span></td>
-                    <td><div v-if="canManageDistributions" class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(distribution)">Edit</button><button type="button" class="action-btn delete" @click="deleteDistribution(distribution)">Delete</button></div><span v-else>Recorded</span></td>
+                    <td data-label="Beneficiary"><b>{{ distribution.beneficiary?.full_name ?? 'Unknown Beneficiary' }}</b><small>{{ distribution.beneficiary?.beneficiary_no ?? 'N/A' }}</small></td>
+                    <td data-label="Package">{{ distribution.relief_package?.package_name ?? 'Unknown Package' }}</td>
+                    <td data-label="Distribution window"><span>{{ formatDate(distribution.start_date) }} – {{ formatDate(distribution.deadline) }}</span></td>
+                    <td data-label="Date">{{ formatDate(distribution.date_released) }}</td>
+                    <td data-label="Status"><span class="tag" :class="{ success: distribution.status === 'Released', warning: distribution.status === 'Pending', neutral: ['Cancelled', 'Voided'].includes(distribution.status) }">{{ distribution.status }}</span></td>
+                    <td data-label="Actions"><div v-if="canManageDistributions && ['Pending', 'Released'].includes(distribution.status)" class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(distribution)">Edit</button><button type="button" class="action-btn delete" @click="deleteDistribution(distribution)">{{ distribution.status === 'Pending' ? 'Cancel assignment' : 'Void record' }}</button></div><span v-else>{{ ['Cancelled', 'Voided'].includes(distribution.status) ? 'History kept' : 'Recorded' }}</span></td>
                 </tr>
-                <tr v-if="!rows.length"><td colspan="5" class="empty-cell">{{ search ? 'No distributions match this search.' : 'No distribution records yet.' }}</td></tr>
+                <tr v-if="!rows.length"><td colspan="6" class="empty-cell">{{ search ? 'No distributions match this search.' : 'No distribution records yet.' }}</td></tr>
             </tbody>
         </table></div>
         <InertiaPagination :links="distributions.links" :show="distributions.last_page > 1" />
@@ -462,10 +329,10 @@ function formatDate(value) {
     </dialog>
 
     <dialog class="form-modal pending-release-modal" id="pending-release-modal" @click.self="$event.currentTarget.close()">
-        <div class="modal-title"><div><h3>{{ isOnline ? 'Choose package to release' : 'Record offline claim' }}</h3><p>{{ pendingBeneficiary?.full_name }} · {{ isOnline ? 'This will be confirmed by the server.' : 'Saved on this device; confirmation waits for sync.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="$event.currentTarget.closest('dialog')?.close()">×</button></div>
+        <div class="modal-title"><div><h3>Choose package to release</h3><p>{{ pendingBeneficiary?.full_name }} · Release will be confirmed by the server.</p></div><button type="button" class="modal-close" aria-label="Close" @click="$event.currentTarget.closest('dialog')?.close()">×</button></div>
         <div class="pending-release-options">
             <button v-for="assignment in pendingReleaseOptions" :key="assignment.id" type="button" class="pending-release-option" @click="releasePendingDistribution(assignment)">
-                <strong>{{ assignment.package_name }}</strong><small>Assigned {{ assignment.assigned_date || 'date unavailable' }}</small>
+                <strong>{{ assignment.package_name }}</strong><small>Assigned {{ assignment.assigned_date || 'date unavailable' }}</small><small v-if="assignment.start_date || assignment.deadline">Collection {{ assignment.start_date || 'any time' }} to {{ assignment.deadline || 'no deadline' }}</small>
             </button>
             <small v-if="pendingReleaseError" class="field-error">{{ pendingReleaseError }}</small>
         </div>
@@ -475,33 +342,69 @@ function formatDate(value) {
         <div class="modal-title"><div><h3>{{ editingId ? 'Edit Distribution' : 'Record Distribution' }}</h3><p>{{ editingId ? 'Update distribution information.' : 'Record a relief package distribution to a beneficiary.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="modal?.close()">×</button></div>
         <form @submit.prevent="saveDistribution">
             <label>Recipients<select v-model="form.recipient_mode" :disabled="!!editingId" required><option value="individual">One beneficiary</option><option value="all">All active beneficiaries</option><option value="priority">Priority group</option></select><small v-if="form.errors.recipient_mode" class="field-error">{{ form.errors.recipient_mode }}</small></label>
-            <label v-if="form.recipient_mode === 'individual'">Beneficiary<div class="beneficiary-scan-row"><select v-model="form.beneficiary_id" required><option value="">Select beneficiary</option><option v-for="beneficiary in beneficiaries" :key="beneficiary.id" :value="beneficiary.id">{{ beneficiary.full_name }} ({{ beneficiary.beneficiary_no }})</option></select><button type="button" class="action-btn" @click="openScanner">Scan QR</button></div><small v-if="form.errors.beneficiary_id" class="field-error">{{ form.errors.beneficiary_id }}</small></label>
+            <label v-if="form.recipient_mode === 'individual'">Beneficiary<div class="beneficiary-scan-row"><select v-model="form.beneficiary_id" required><option value="">Select beneficiary</option><option v-for="beneficiary in beneficiaries" :key="beneficiary.id" :value="beneficiary.id">{{ beneficiary.full_name }} ({{ beneficiary.beneficiary_no }})</option></select><button type="button" class="action-btn" :disabled="!isOnline" @click="openScanner">Scan QR</button></div><small v-if="form.errors.beneficiary_id" class="field-error">{{ form.errors.beneficiary_id }}</small></label>
             <label v-if="form.recipient_mode === 'priority'">Priority group<select v-model="form.priority_type" required><option value="">Choose group</option><option>PWD</option><option>Solo Parent</option><option>Senior Citizen</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label>
             <p v-if="form.recipient_mode !== 'individual'" class="recipient-count">This will create {{ recipientCount }} distribution record(s), one per active beneficiary.</p>
             <label>Relief Package<select v-model="form.package_id" required><option value="">Select package</option><option v-for="item in packageOptions" :key="item.id" :value="item.id">{{ item.package_name }} — {{ item.available_quantity ?? '—' }} packs ready</option></select><small v-if="form.errors.package_id" class="field-error">{{ form.errors.package_id }}</small></label>
             <p v-if="insufficientPackageStock" class="recipient-warning">This package has {{ selectedPackage.available_quantity }} pack(s) ready, but {{ recipientCount }} active beneficiaries are selected. Add stock or choose a smaller group.</p>
-            <label>Date Released<input v-model="form.date_released" type="date" required><small v-if="form.errors.date_released" class="field-error">{{ form.errors.date_released }}</small></label>
-            <label>Distribution status<select v-model="form.status" required><option value="Released">Release now</option><option value="Pending">Assign as pending</option></select><small v-if="form.status === 'Pending'" class="recipe-help">Pending assignments reserve their package stock and appear in the beneficiary’s mobile relief history. Scan their QR code at pickup to mark the package released.</small><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
+            <div class="distribution-window-fields">
+                <label>Start of distribution<input v-model="form.start_date" type="date" :max="form.deadline || undefined" required><small v-if="form.errors.start_date" class="field-error">{{ form.errors.start_date }}</small></label>
+                <label>Deadline<input v-model="form.deadline" type="date" :min="form.start_date || undefined" required><small v-if="form.errors.deadline" class="field-error">{{ form.errors.deadline }}</small></label>
+            </div>
+            <div class="distribution-pending-status"><strong>{{ form.status === 'Released' ? 'Released — scan confirmed' : 'Pending — QR scan required' }}</strong><span>{{ form.status === 'Released' ? 'This record was already marked released after a QR scan. Its status cannot be changed here.' : 'Recording an assignment does not confirm pickup. It will be marked released only after staff scan the beneficiary’s QR code.' }}</span></div>
             <label>Notes<textarea v-model="form.notes" rows="3"/><small v-if="form.errors.notes" class="field-error">{{ form.errors.notes }}</small></label>
-            <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing || recipientCount === 0 || insufficientPackageStock">{{ form.processing ? 'Saving…' : editingId ? 'Update Distribution' : 'Record Distribution' }}</button></div>
+            <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing || !isOnline || recipientCount === 0 || insufficientPackageStock">{{ form.processing ? 'Saving…' : editingId ? 'Update Distribution' : 'Record Distribution' }}</button></div>
         </form>
     </AdminModal>
 </template>
 
 <style scoped>
 .recipient-count { margin: -4px 0 4px; color: #52657f; font-size: 12px; }
+.distribution-window-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 480px) { .distribution-window-fields { grid-template-columns: 1fr; gap: 0; } }
 .recipient-warning { margin: -5px 0 4px; color: #a53d00; font-size: 12px; }
-.offline-panel { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin: 0 0 18px; padding: 16px 18px; border-color: #cbd9ea; }
-.offline-panel-copy { display: grid; gap: 5px; color: #52657f; font-size: 12px; }
-.offline-panel-copy strong { color: #173b67; font-size: 14px; }
-.offline-claim-status { color: #9a5a00; }
-.offline-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.offline-actions button:disabled { opacity: .55; cursor: not-allowed; }
-@media (max-width: 680px) { .offline-panel { flex-direction: column; } }
+.distribution-pending-status { display: grid; gap: 5px; padding: 11px 12px; border: 1px solid #f0ddb9; border-radius: 9px; background: #fffaf0; color: #77551b; }
+.distribution-pending-status strong { font-size: 12px; }
+.distribution-pending-status span { color: #7b6a4d; font-size: 11px; font-weight: 400; line-height: 1.5; }
+.connection-status { display: flex; align-items: center; gap: 11px; margin: 0 0 16px; padding: 12px 15px; border: 1px solid #cfe7d9; border-radius: 10px; background: #f2faf5; color: #2e6043; }
+.connection-status.is-disconnected { border-color: #f1d4a7; background: #fff9ed; color: #805b1b; }
+.connection-indicator { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #2f9d62; }
+.is-disconnected .connection-indicator { background: #d18b21; }
+.connection-status div { display: grid; gap: 2px; }
+.connection-status strong { font-size: 12px; }
+.connection-status span:not(.connection-indicator) { font-size: 11px; }
+.module-heading-actions button:disabled { cursor: not-allowed; opacity: .55; }
 .already-claimed-modal { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid #e5eaf0; border-radius: 14px; box-shadow: 0 24px 64px rgba(15, 35, 60, .2); }
 .pending-release-modal { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid #e5eaf0; border-radius: 14px; box-shadow: 0 24px 64px rgba(15, 35, 60, .2); }
 .pending-release-options { display: grid; gap: 8px; padding: 16px 20px 20px; }
 .pending-release-option { display: grid; gap: 4px; padding: 12px; border: 1px solid #e1e8f0; border-radius: 9px; background: #f8fafc; color: #29496f; text-align: left; cursor: pointer; }
 .pending-release-option:hover { border-color: #8fb5f8; background: #f1f6ff; }
 .pending-release-option small { color: #718096; }
+.checkin-station { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 20px; align-items: start; max-width: 760px; margin: 28px auto; padding: 28px; }
+.checkin-station-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 18px; background: #eaf2ff; color: #2864c8; }
+.checkin-station-icon svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.checkin-eyebrow { margin: 0 0 7px; color: #2864c8; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.checkin-station-copy h3 { margin: 0 0 7px; color: #173b67; font-size: 21px; }
+.checkin-station-copy > p:not(.checkin-eyebrow) { max-width: 560px; margin: 0; color: #667991; font-size: 13px; line-height: 1.6; }
+.checkin-station-copy ol { display: grid; gap: 10px; margin: 20px 0; padding-left: 22px; color: #536780; font-size: 12px; line-height: 1.5; }
+.checkin-scan-button { min-width: 160px; min-height: 44px; background: #245fba; border-color: #245fba; color: #fff; }
+.checkin-scan-button:hover:not(:disabled) { background: #1c4f9e; border-color: #1c4f9e; }
+.checkin-scan-button:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 640px) {
+    .checkin-station { grid-template-columns: 1fr; gap: 14px; margin: 14px auto; padding: 21px; }
+    .checkin-station-icon { width: 52px; height: 52px; border-radius: 14px; }
+    .checkin-station-copy h3 { font-size: 19px; }
+    .checkin-scan-button { width: 100%; min-height: 48px; }
+    .field-distribution-table { min-width: 0; width: 100%; }
+    .field-distribution-table thead { display: none; }
+    .field-distribution-table, .field-distribution-table tbody { display: block; }
+    .field-distribution-table tbody { padding: 10px; }
+    .field-distribution-table tbody tr { display: grid; gap: 0; margin-bottom: 10px; padding: 8px 13px; border: 1px solid #e2e8f0; border-radius: 11px; background: #fff; }
+    .field-distribution-table tbody tr:last-child { margin-bottom: 0; }
+    .field-distribution-table td { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #edf2f7; white-space: normal; overflow-wrap: anywhere; }
+    .field-distribution-table td:first-child { border-top: 0; }
+    .field-distribution-table td::before { content: attr(data-label); color: #8290a5; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .field-distribution-table td.empty-cell { display: block; padding: 22px 12px; }
+    .field-distribution-table td.empty-cell::before { content: none; }
+}
 </style>

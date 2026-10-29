@@ -1,6 +1,7 @@
 <script setup>
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { appConfirm } from '../composables/useAppDialog';
 
 defineProps({ title: { type: String, required: true }, subtitle: { type: String, required: true } });
 const emit = defineEmits(['toggle-sidebar']);
@@ -67,22 +68,11 @@ function onKeydown(event) {
 }
 
 async function signOut() {
-    const result = window.Swal
-        ? await window.Swal.fire({
-            title: 'Sign out?',
-            text: 'You will need to sign in again to access the admin portal.',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Sign out',
-            cancelButtonText: 'Cancel',
-            reverseButtons: true,
-            confirmButtonColor: '#2563eb',
-        })
-        : { isConfirmed: window.confirm('Are you sure you want to sign out?') };
-
-    if (result.isConfirmed) {
-        router.post(routes.value.logout);
-    }
+    const confirmed = await appConfirm('You will need to sign in again to access the admin portal.', {
+        title: 'Sign out?',
+        confirmLabel: 'Sign out',
+    });
+    if (confirmed) router.post(routes.value.logout);
 }
 
 function isSpaUrl(url) {

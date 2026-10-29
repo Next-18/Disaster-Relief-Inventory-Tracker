@@ -6,6 +6,7 @@ const page = usePage();
 const form = useForm({
     full_name: '',
     beneficiary_no: '',
+    temporary_password: '',
     password: '',
     password_confirmation: '',
 });
@@ -23,8 +24,8 @@ function submit() {
     <div class="auth-container">
         <div class="auth-card">
             <div class="auth-header">
-                <h1>Create Account</h1>
-                <p>Register as a beneficiary to access relief services</p>
+                <h1>Activate Account</h1>
+                <p>Use the temporary credentials provided by your Barangay Administrator.</p>
             </div>
 
             <div v-if="$page.props.flash.success" class="flash-success">
@@ -45,8 +46,18 @@ function submit() {
                         v-model="form.beneficiary_no" 
                         type="text" 
                         required 
-                        placeholder="Enter your beneficiary number (e.g., BEN-1001)"
+                        placeholder="Enter your beneficiary code"
                     >
+                </label>
+                <label>Temporary Password
+                    <input
+                        v-model="form.temporary_password"
+                        type="password"
+                        required
+                        autocomplete="current-password"
+                        placeholder="Enter the temporary password from your administrator"
+                    >
+                    <small v-if="form.errors.temporary_password" class="field-error">{{ form.errors.temporary_password }}</small>
                 </label>
                 <label>Password
                     <input 
@@ -70,7 +81,7 @@ function submit() {
                     <small v-if="form.errors.password_confirmation" class="field-error">{{ form.errors.password_confirmation }}</small>
                 </label>
                 <button type="submit" class="primary-action" :disabled="form.processing">
-                    {{ form.processing ? 'Creating Account...' : 'Create Account' }}
+                    {{ form.processing ? 'Activating Account...' : 'Activate Account' }}
                 </button>
             </form>
 

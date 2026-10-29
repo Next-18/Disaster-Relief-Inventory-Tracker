@@ -71,22 +71,22 @@ function initials(name) {
     </section>
 
     <section class="metrics dashboard-metrics" aria-label="Relief operations summary" aria-live="polite">
-        <article class="metric-card dashboard-metric blue">
+        <Link class="metric-card dashboard-metric blue" :href="routes.inventory" aria-label="View inventory records">
             <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7M12 11v10M7.5 5 16.5 9"/></svg></span>
             <div class="dashboard-metric-copy"><p>Inventory items</p><strong>{{ Number(totalInventoryItems).toLocaleString() }}</strong><small>Supply types tracked</small></div>
-        </article>
-        <article class="metric-card dashboard-metric red">
+        </Link>
+        <Link class="metric-card dashboard-metric red" :href="`${routes.inventory}?stock_status=low`" aria-label="Review low stock items">
             <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="m12 3 9 17H3L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg></span>
             <div class="dashboard-metric-copy"><p>Low stock</p><strong>{{ Number(stockAlertsCount).toLocaleString() }}</strong><small>At or below minimum</small></div>
-        </article>
-        <article class="metric-card dashboard-metric orange">
+        </Link>
+        <Link class="metric-card dashboard-metric orange" :href="`${routes.distribution}?status=Pending`" aria-label="Review pending distributions">
             <span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
             <div class="dashboard-metric-copy"><p>Pending distributions</p><strong>{{ Number(pendingDistributions).toLocaleString() }}</strong><small>Awaiting completion</small></div>
-        </article>
-        <article class="metric-card dashboard-metric green">
+        </Link>
+        <Link class="metric-card dashboard-metric green" :href="`${routes.distribution}?status=Released`" aria-label="Review released packages">
             <span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg></span>
             <div class="dashboard-metric-copy"><p>Fulfilled</p><strong>{{ Number(fulfilledDistributions).toLocaleString() }}</strong><small>Packages released</small></div>
-        </article>
+        </Link>
     </section>
 
     <section class="dashboard-grid">
@@ -96,15 +96,15 @@ function initials(name) {
                 <Link :href="routes.distribution">View all →</Link>
             </div>
             <div class="table-wrap">
-                <table>
+                <table class="dashboard-recent-table">
                     <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DATE RELEASED</th><th>RECORDED BY</th><th>STATUS</th></tr></thead>
                     <tbody>
                         <tr v-for="distribution in recentDistributions" :key="distribution.id">
-                            <td><i class="avatar" :class="`a${(distribution.id % 4) + 1}`">{{ initials(distribution.beneficiary_name) }}</i><b>{{ distribution.beneficiary_name }}</b><small>{{ distribution.beneficiary_no }}</small></td>
-                            <td>{{ distribution.package_name }}</td>
-                            <td>{{ distribution.date_released }}</td>
-                            <td><b>{{ distribution.recorded_by }}</b><small>{{ distribution.recorded_at }}</small></td>
-                            <td><em class="status" :class="distribution.status === 'Released' ? 'success' : 'pending'">{{ distribution.status }}</em></td>
+                            <td data-label="Beneficiary"><i class="avatar" :class="`a${(distribution.id % 4) + 1}`">{{ initials(distribution.beneficiary_name) }}</i><b>{{ distribution.beneficiary_name }}</b><small>{{ distribution.beneficiary_no }}</small></td>
+                            <td data-label="Package">{{ distribution.package_name }}</td>
+                            <td data-label="Date">{{ distribution.date_released }}</td>
+                            <td data-label="Recorded by"><b>{{ distribution.recorded_by }}</b><small>{{ distribution.recorded_at }}</small></td>
+                            <td data-label="Status"><em class="status" :class="distribution.status === 'Released' ? 'success' : 'pending'">{{ distribution.status }}</em></td>
                         </tr>
                         <tr v-if="!recentDistributions.length"><td colspan="5" class="empty-cell">No distribution records yet.</td></tr>
                     </tbody>
@@ -116,12 +116,13 @@ function initials(name) {
             <article class="panel stock" id="inventory">
                 <div class="panel-heading"><div><h3>Stock Alerts</h3><p>Items at or below minimum stock</p></div><b class="alert-count">{{ stockAlertsCount }}</b></div>
                 <div v-for="item in lowStockItems" :key="item.id" class="stock-item">
-                    📦
+                    <span class="stock-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg></span>
                     <div><b>{{ item.item_name }}</b><small>{{ item.quantity }} {{ item.unit }} remaining</small></div>
                     <em>{{ item.status }}</em>
                 </div>
                 <div v-if="!lowStockItems.length" class="stock-item"><div><b>No stock alerts</b><small>All items are adequately stocked</small></div></div>
-                <Link class="stock-link" :href="routes.inventory">Manage inventory →</Link>
+                <p v-if="stockAlertsCount > lowStockItems.length" class="stock-more">Showing {{ lowStockItems.length }} of {{ stockAlertsCount }} items needing attention.</p>
+                <Link class="stock-link" :href="routes.inventory + '?stock_status=low'">Review low-stock items →</Link>
             </article>
             <article class="panel category-stock">
                 <div class="panel-heading"><div><h3>Stock by category</h3><p>On hand, grouped by unit</p></div></div>
@@ -133,8 +134,8 @@ function initials(name) {
             </article>
             <article class="panel quick">
                 <h3>Quick Actions</h3>
-                <Link :href="`${routes.beneficiaries}?action=add`">+ <span>Add beneficiary<small>Create a beneficiary record</small></span>›</Link>
-                <Link :href="`${routes.inventory}?action=add`">+ <span>Add inventory item<small>Track a new relief supply</small></span>›</Link>
+                <Link :href="`${routes.beneficiaries}?action=add`"><span class="quick-action-icon" aria-hidden="true">+</span><span>Add beneficiary<small>Create a beneficiary record</small></span>›</Link>
+                <Link :href="`${routes.inventory}?action=add`"><span class="quick-action-icon" aria-hidden="true">+</span><span>Add inventory item<small>Track a new relief supply</small></span>›</Link>
                 <Link :href="routes.deliveries">↓ <span>Record delivery<small>Add received supplies to stock</small></span>›</Link>
                 <Link :href="routes.distribution">→ <span>Manage distributions<small>Review pending and completed</small></span>›</Link>
             </article>

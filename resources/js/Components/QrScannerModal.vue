@@ -13,6 +13,8 @@ const SCANNER_ELEMENT_ID = 'qr-scanner-region';
 const SCANNER_OPTIONS = {
     formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
     verbose: false,
+    // html5-qrcode alternates its native BarcodeDetector and ZXing decoders
+    // when the browser supports both, retaining ZXing as a fallback.
     useBarCodeDetectorIfSupported: true,
 };
 const modal = ref(null);
@@ -20,6 +22,8 @@ const starting = ref(false);
 const cameraError = ref('');
 const manualCode = ref('');
 const imageInput = ref(null);
+const scannerStage = ref(null);
+const trackingBox = ref(null);
 const cameraControls = ref({ zoom: null, torch: false, torchSupported: false, exposure: null });
 const detected = ref(false);
 const cameraActive = ref(false);
@@ -38,15 +42,14 @@ let enhanceCanvas = null;
 let zxingReader = null;
 let darkFrames = 0;
 let lightingTouchedByUser = false;
+let barcodeDetector = null;
+let qrTrackingTimer = null;
+let lastTrackedAt = 0;
 
 // No qrbox: the decoder scans the whole camera frame, so the QR pass
 // only has to be somewhere in view — no aligning into a target box.
 const SCAN_CONFIG = {
     fps: 20,
-    qrbox: (viewfinderWidth, viewfinderHeight) => {
-        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.78);
-        return { width: size, height: size };
-    },
 };
 // html5-qrcode only allows a single facingMode/deviceId key in the first
 // argument — extra constraints (resolution etc.) must go via videoConstraints.
@@ -161,7 +164,65 @@ function loadCameraControls(activeScanner) {
         // exposure control unsupported
     }
     cameraActive.value = true;
+    startQrTracking();
     startEnhanceLoop();
+}
+
+function startQrTracking() {
+    if (!window.BarcodeDetector) return;
+    try {
+        barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        lastTrackedAt = 0;
+        trackQrPosition();
+    } catch {
+        barcodeDetector = null;
+    }
+}
+
+async function trackQrPosition() {
+    if (!barcodeDetector || !cameraActive.value) return;
+    const video = document.querySelector(`#${SCANNER_ELEMENT_ID} video`);
+    const stage = scannerStage.value;
+    try {
+        if (video?.readyState >= 2 && video.videoWidth && stage) {
+            const matches = await barcodeDetector.detect(video);
+            const bounds = matches
+                .map((match) => match.boundingBox)
+                .filter((box) => box && box.width > 0 && box.height > 0)
+                .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+            if (bounds) {
+                const stageRect = stage.getBoundingClientRect();
+                const scale = Math.max(stageRect.width / video.videoWidth, stageRect.height / video.videoHeight);
+                const displayWidth = video.videoWidth * scale;
+                const displayHeight = video.videoHeight * scale;
+                let left = (stageRect.width - displayWidth) / 2 + bounds.x * scale;
+                const top = (stageRect.height - displayHeight) / 2 + bounds.y * scale;
+                const width = bounds.width * scale;
+                const height = bounds.height * scale;
+                if (mirrored.value) left = stageRect.width - left - width;
+                const padding = Math.max(4, Math.min(width, height) * 0.04);
+                const x = Math.max(0, left - padding);
+                const y = Math.max(0, top - padding);
+                const right = Math.min(stageRect.width, left + width + padding);
+                const bottom = Math.min(stageRect.height, top + height + padding);
+                trackingBox.value = {
+                    left: `${x}px`,
+                    top: `${y}px`,
+                    width: `${Math.max(0, right - x)}px`,
+                    height: `${Math.max(0, bottom - y)}px`,
+                };
+                lastTrackedAt = Date.now();
+            } else if (Date.now() - lastTrackedAt > 450) {
+                trackingBox.value = null;
+            }
+        }
+    } catch {
+        // Tracking is an enhancement; QR decoding continues without it.
+    } finally {
+        if (cameraActive.value && barcodeDetector) {
+            qrTrackingTimer = setTimeout(trackQrPosition, 250);
+        }
+    }
 }
 
 function getVideoTrack() {
@@ -422,16 +483,23 @@ async function uploadQrImage(event) {
 }
 
 async function stopScanner() {
-    if (!scanner) return;
+    cameraActive.value = false;
+    stopEnhanceLoop();
+    clearTimeout(qrTrackingTimer);
+    qrTrackingTimer = null;
+    barcodeDetector = null;
+    trackingBox.value = null;
+    lastTrackedAt = 0;
     const active = scanner;
     scanner = null;
-    try {
-        if (active.isScanning) await active.stop();
-        active.clear();
-    } catch {
-        // already stopped
+    if (active) {
+        try {
+            if (active.isScanning) await active.stop();
+            active.clear();
+        } catch {
+            // already stopped
+        }
     }
-    stopEnhanceLoop();
     cameraCapabilities = null;
     cameraTrack = null;
     cameraControls.value = { zoom: null, torch: false, torchSupported: false, exposure: null };
@@ -473,7 +541,11 @@ defineExpose({ open, close });
             <button type="button" class="modal-close" aria-label="Close" @click="close">×</button>
         </div>
         <div class="qr-scanner-body">
-            <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" :class="{ detected, mirrored }" />
+            <div ref="scannerStage" class="qr-scanner-stage" :class="{ detected, scanning: cameraActive && !detected, mirrored, tracking: !!trackingBox }" aria-label="QR code camera preview">
+                <div :id="SCANNER_ELEMENT_ID" class="qr-scanner-region" />
+                <div class="qr-scanner-guide" :class="{ tracking: !!trackingBox, detected }" :style="trackingBox || undefined" aria-hidden="true"><span /></div>
+                <p v-if="!cameraActive && !starting && !cameraError" class="qr-scanner-camera-placeholder">Camera preview will appear here</p>
+            </div>
             <div v-if="cameraControls.zoom || cameraControls.torchSupported || cameraControls.exposure || cameraList.length > 1" class="qr-scanner-controls">
                 <label v-if="cameraControls.zoom" class="qr-scanner-zoom">
                     <span>Zoom</span>
@@ -491,8 +563,8 @@ defineExpose({ open, close });
             <p v-else-if="starting" class="qr-scanner-hint">Starting camera…</p>
             <p v-else-if="detected" class="qr-scanner-hint qr-scanner-success">QR detected — opening record…</p>
             <p v-else-if="cameraActive && lowLight && !cameraControls.torch" class="qr-scanner-hint">Scene looks dark — raise the pass's brightness or move to better light.</p>
-            <p v-else-if="cameraActive" class="qr-scanner-hint">Scanning… center the QR inside the guide and hold it steady.</p>
-            <p v-else class="qr-scanner-hint">Center the QR inside the guide and hold it steady. Raise screen brightness if it won't pick up.</p>
+            <p v-else-if="cameraActive" class="qr-scanner-hint">Keep the QR code in view and hold it steady. The guide follows it when detected.</p>
+            <p v-else class="qr-scanner-hint">Keep the QR code anywhere in view and hold it steady. The guide will follow when detected.</p>
             <button v-if="cameraError || error" type="button" class="qr-scanner-link" @click="retryCamera">Restart camera</button>
 
             <div class="qr-scanner-divider"><span>or type the number</span></div>

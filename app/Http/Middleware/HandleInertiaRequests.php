@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\AdminNotifications;
+use App\Models\Announcement;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -23,8 +24,15 @@ class HandleInertiaRequests extends Middleware
                 'user_credentials' => fn () => $request->session()->get('user_credentials'),
             ],
             'notifications' => fn () => app(AdminNotifications::class)->for($request->user()),
+            'staffAnnouncements' => fn () => $request->user()?->canRecordDistributions()
+                && $request->user()?->role !== 'admin'
+                    ? Announcement::query()->where('is_published', true)->latest()->get(['id', 'title', 'body', 'created_at'])
+                    : [],
             'routeUrls' => [
                 'dashboard' => route('dashboard'),
+                'announcements' => route('admin.announcements'),
+                'announcementStore' => route('admin.announcements.store'),
+                'announcementDelete' => route('admin.announcements.destroy', ['announcement' => '__ID__']),
                 'beneficiaries' => route('admin.beneficiaries'),
                 'beneficiaryStore' => route('admin.beneficiaries.store'),
                 'beneficiaryUpdate' => route('admin.beneficiaries.update', ['id' => '__ID__']),
@@ -46,8 +54,6 @@ class HandleInertiaRequests extends Middleware
                 'distribution' => route('admin.distribution'),
                 'distributionStore' => route('admin.distribution.store'),
                 'distributionReleasePending' => route('admin.distribution.release-pending'),
-                'distributionOfflineAssignments' => route('admin.distribution.offline-assignments'),
-                'distributionOfflineSync' => route('admin.distribution.offline-sync'),
                 'distributionUpdate' => route('admin.distribution.update', ['id' => '__ID__']),
                 'distributionDelete' => route('admin.distribution.delete', ['id' => '__ID__']),
                 'packages' => route('admin.packages'),

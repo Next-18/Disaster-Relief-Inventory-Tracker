@@ -110,7 +110,8 @@ class AdminTopbarTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('totalBeneficiaries', 1)
+                ->where('totalInventoryItems', 1)
+                ->where('stockAlertsCount', 1)
                 ->where('notifications.0.title', 'Low stock: Water containers')
                 ->has('notifications', 3)
                 ->where('routeUrls.beneficiaries', route('admin.beneficiaries'))

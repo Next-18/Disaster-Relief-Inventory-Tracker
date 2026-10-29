@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Beneficiary;
+use App\Models\Distribution;
 use App\Models\ReliefPackage;
 use App\Models\Setting;
 use App\Models\User;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -77,6 +79,13 @@ class RemainingInertiaPagesTest extends TestCase
     public function test_package_crud_and_settings_submission_keep_validation_and_flash_feedback(): void
     {
         $this->actingAs(User::factory()->admin()->create());
+        $inventoryItem = \App\Models\InventoryItem::create([
+            'item_name' => 'Rice',
+            'category' => 'Food',
+            'quantity' => 20,
+            'unit' => 'bags',
+            'minimum_stock' => 5,
+        ]);
 
         $this->from(route('admin.packages'))
             ->withHeader('X-Inertia', 'true')
@@ -85,6 +94,7 @@ class RemainingInertiaPagesTest extends TestCase
                 'description' => 'Rice, canned food and water',
                 'category' => 'Food',
                 'status' => 'Available',
+                'items' => [['inventory_item_id' => $inventoryItem->id, 'quantity_per_package' => 2]],
             ])
             ->assertRedirect(route('admin.packages'))
             ->assertSessionHas('success', 'Relief package added successfully.');
@@ -97,6 +107,7 @@ class RemainingInertiaPagesTest extends TestCase
                 'description' => 'Updated contents',
                 'category' => 'Food',
                 'status' => 'Not Available',
+                'items' => [['inventory_item_id' => $inventoryItem->id, 'quantity_per_package' => 3]],
             ])
             ->assertRedirect(route('admin.packages'));
         $this->assertDatabaseHas('relief_packages', ['id' => $package->id, 'package_name' => 'Family food pack', 'status' => 'Not Available']);
@@ -121,16 +132,44 @@ class RemainingInertiaPagesTest extends TestCase
                 'barangay_name' => 'San Isidro',
                 'municipality' => 'Sample City',
                 'province' => 'Sample Province',
-                'session_timeout' => 60,
-                'notifications_enabled' => false,
-                'auto_backup_enabled' => true,
             ])
             ->assertRedirect(route('admin.settings'))
             ->assertSessionHas('success', 'Settings updated successfully.');
 
-        $this->assertSame('0', Setting::where('key', 'notifications_enabled')->value('value'));
-        $this->assertSame('1', Setting::where('key', 'auto_backup_enabled')->value('value'));
-        $this->assertSame('60', Setting::where('key', 'session_timeout')->value('value'));
+        $this->assertSame('ReliefTrack', Setting::where('key', 'site_name')->value('value'));
+        $this->assertSame('San Isidro', Setting::where('key', 'barangay_name')->value('value'));
+    }
+
+    public function test_package_with_distribution_history_cannot_be_deleted(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $staff = User::factory()->create(['role' => 'staff']);
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-9020',
+            'full_name' => 'Mina Cruz',
+            'status' => 'Active',
+        ]);
+        $package = ReliefPackage::create([
+            'package_name' => 'Emergency food kit',
+            'category' => 'Food',
+            'status' => 'Available',
+        ]);
+        $distribution = Distribution::create([
+            'beneficiary_id' => $beneficiary->id,
+            'package_id' => $package->id,
+            'date_released' => now()->toDateString(),
+            'status' => 'Pending',
+            'distributed_by' => $staff->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('admin.packages'))
+            ->delete(route('admin.packages.delete', $package->id))
+            ->assertRedirect(route('admin.packages'))
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('relief_packages', ['id' => $package->id]);
+        $this->assertDatabaseHas('distributions', ['id' => $distribution->id, 'package_id' => $package->id, 'status' => 'Pending']);
     }
 
     public function test_lost_qr_action_updates_the_existing_beneficiary_record(): void
@@ -150,5 +189,37 @@ class RemainingInertiaPagesTest extends TestCase
             ->assertSessionHas('success');
 
         $this->assertDatabaseHas('beneficiaries', ['id' => $beneficiary->id, 'qr_code' => null]);
+    }
+
+    public function test_beneficiary_can_activate_admin_provisioned_account_with_temporary_password(): void
+    {
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-9010',
+            'full_name' => 'Paula Reyes',
+            'status' => 'Active',
+        ]);
+        $user = User::factory()->create([
+            'name' => $beneficiary->full_name,
+            'email' => $beneficiary->beneficiary_no,
+            'password' => 'TEMPORARY7',
+            'beneficiary_id' => $beneficiary->id,
+            'role' => 'user',
+            'password_changed' => false,
+        ]);
+
+        $this->from(route('register'))
+            ->post(route('register.attempt'), [
+                'full_name' => $beneficiary->full_name,
+                'beneficiary_no' => strtolower($beneficiary->beneficiary_no),
+                'temporary_password' => 'TEMPORARY7',
+                'password' => 'ReliefPass2026',
+                'password_confirmation' => 'ReliefPass2026',
+            ])
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('success');
+
+        $user->refresh();
+        $this->assertTrue($user->password_changed);
+        $this->assertTrue(Hash::check('ReliefPass2026', $user->password));
     }
 }

@@ -18,7 +18,7 @@ const routes = computed(() => page.props.routeUrls ?? {});
 const search = ref(props.filters.search ?? '');
 const modal = ref(null);
 const form = useForm({
-    source: 'DSWD',
+    source: '',
     reference_number: '',
     delivery_date: new Date().toISOString().slice(0, 10),
     notes: '',
@@ -37,7 +37,7 @@ function visitSearch() {
 function openModal() {
     form.reset();
     form.clearErrors();
-    form.source = 'DSWD';
+    form.source = '';
     form.delivery_date = new Date().toISOString().slice(0, 10);
     form.items = [{ inventory_item_id: '', quantity_received: 1, quantity_damaged: 0, condition_note: '' }];
     modal.value?.showModal();

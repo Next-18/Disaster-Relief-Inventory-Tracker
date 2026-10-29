@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreDistributionRequest;
 use App\Http\Resources\DistributionResource;
+use App\Models\AuditLog;
 use App\Models\Distribution;
 use App\Models\Beneficiary;
 use App\Services\DistributionStockService;
@@ -66,6 +67,7 @@ class DistributionController extends Controller
     public function store(StoreDistributionRequest $request, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
     {
         $data = $request->validated();
+        $data['date_released'] ??= $data['start_date'] ?? today()->toDateString();
         $data['distributed_by'] = $request->user()->id;
 
         $distribution = DB::transaction(function () use ($data, $stock) {
@@ -148,5 +150,62 @@ class DistributionController extends Controller
             'message' => 'Distribution recorded successfully',
             'data' => new DistributionResource($distribution),
         ], 201);
+    }
+
+    public function releasePending(Request $request, DistributionStockService $stock)
+    {
+        $validated = $request->validate([
+            'beneficiary_no' => ['required', 'string', 'max:64'],
+            'distribution_id' => ['required', 'integer', 'exists:distributions,id'],
+        ]);
+
+        $beneficiary = Beneficiary::query()
+            ->forQrPayload($validated['beneficiary_no'])
+            ->where('status', 'Active')
+            ->firstOrFail();
+
+        $distribution = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
+            Beneficiary::query()->lockForUpdate()->findOrFail($beneficiary->id);
+            $distribution = Distribution::query()
+                ->whereKey($validated['distribution_id'])
+                ->where('beneficiary_id', $beneficiary->id)
+                ->where('status', 'Pending')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $distribution) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'distribution_id' => 'This pending package is no longer available. Refresh and scan again.',
+                ]);
+            }
+
+            if ($windowError = $distribution->releaseWindowError()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['distribution_id' => $windowError]);
+            }
+
+            $distribution->update([
+                'status' => 'Released',
+                'date_released' => now(),
+                'distributed_by' => $request->user()->id,
+            ]);
+            $stock->consumeFor($distribution);
+
+            return $distribution->load(['beneficiary', 'reliefPackage']);
+        });
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'release',
+            'module' => 'distribution',
+            'description' => "Released {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name} via mobile API",
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pending package released successfully.',
+            'data' => new DistributionResource($distribution),
+        ]);
     }
 }

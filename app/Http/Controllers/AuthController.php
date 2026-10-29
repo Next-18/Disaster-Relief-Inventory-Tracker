@@ -10,6 +10,8 @@ use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -33,36 +35,62 @@ class AuthController extends Controller
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'beneficiary_no' => ['required', 'string', 'max:20'],
+            'temporary_password' => ['nullable', 'string', 'max:255'],
             'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()],
         ]);
 
-        // Check if beneficiary exists
-        $beneficiary = Beneficiary::where('beneficiary_no', $validated['beneficiary_no'])->first();
+        $beneficiary = Beneficiary::query()
+            ->whereRaw('UPPER(beneficiary_no) = ?', [Str::upper(trim($validated['beneficiary_no']))])
+            ->first();
         
         if (!$beneficiary) {
-            return back()->withErrors(['beneficiary_no' => 'Beneficiary number not found. Please contact admin for assistance.']);
+            return back()->withErrors(['beneficiary_no' => 'Beneficiary code not found. Please contact admin for assistance.']);
         }
 
         if (mb_strtolower(trim($beneficiary->full_name)) !== mb_strtolower(trim($validated['full_name']))) {
             return back()->withErrors(['beneficiary_no' => 'The details do not match our records. Please contact admin for assistance.']);
         }
 
-        // Check if user already exists for this beneficiary
-        if ($beneficiary->user) {
-            return back()->withErrors(['beneficiary_no' => 'An account already exists for this beneficiary.']);
-        }
+        DB::transaction(function () use ($beneficiary, $validated) {
+            $lockedBeneficiary = Beneficiary::query()->lockForUpdate()->findOrFail($beneficiary->id);
+            $user = User::query()
+                ->where('beneficiary_id', $lockedBeneficiary->id)
+                ->lockForUpdate()
+                ->first();
 
-        // Create user account
-        User::create([
-            'name' => $validated['full_name'],
-            'email' => $validated['beneficiary_no'], // Use beneficiary number as username
-            'password' => bcrypt($validated['password']),
-            'beneficiary_id' => $beneficiary->id,
-            'role' => 'user',
-            'password_changed' => true, // User created their own password
-        ]);
+            if ($user) {
+                if ($user->password_changed) {
+                    throw ValidationException::withMessages([
+                        'beneficiary_no' => ['An account is already active. Sign in through the mobile app.'],
+                    ]);
+                }
 
-        return redirect()->route('login')->with('success', 'Account created successfully. Please login with your beneficiary number and password.');
+                if (empty($validated['temporary_password']) || ! Hash::check($validated['temporary_password'], $user->password)) {
+                    throw ValidationException::withMessages([
+                        'temporary_password' => ['The temporary password is incorrect. Check the credentials provided by your administrator.'],
+                    ]);
+                }
+
+                $user->password = $validated['password'];
+                $user->username ??= User::uniqueUsernameFor($lockedBeneficiary->full_name);
+                $user->password_changed = true;
+                $user->save();
+
+                return;
+            }
+
+            User::create([
+                'name' => $lockedBeneficiary->full_name,
+                'email' => $lockedBeneficiary->beneficiary_no,
+                'username' => User::uniqueUsernameFor($lockedBeneficiary->full_name),
+                'password' => $validated['password'],
+                'beneficiary_id' => $lockedBeneficiary->id,
+                'role' => 'user',
+                'password_changed' => true,
+            ]);
+        });
+
+        return redirect()->route('login')->with('success', 'Account activated successfully. You can now sign in to the mobile app with your username and new password.');
     }
 
     public function login(Request $request)
@@ -77,8 +105,28 @@ class AuthController extends Controller
         }
 
         $credentials = $request->validate(['email' => ['required'], 'password' => ['required', 'string']]);
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            if (!Auth::user()->canRecordDistributions()) {
+        $identifier = trim((string) $credentials['email']);
+        $remember = $request->boolean('remember');
+        $authenticated = false;
+
+        if (! filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            $authenticated = Auth::attempt([
+                'username' => Str::lower($identifier),
+                'password' => $credentials['password'],
+            ], $remember);
+        }
+
+        if (! $authenticated) {
+            $emailOrCode = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? $identifier : Str::upper($identifier);
+            $authenticated = Auth::attempt([
+                'email' => $emailOrCode,
+                'password' => $credentials['password'],
+            ], $remember);
+        }
+
+        if ($authenticated) {
+            $user = Auth::user();
+            if (!$user->canRecordDistributions()) {
                 Auth::logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
@@ -96,26 +144,15 @@ class AuthController extends Controller
 
     private function redirectForRole(User $user)
     {
+        if ($user->role === 'user') {
+            Auth::logout();
+            request()->session()->invalidate();
+            request()->session()->regenerateToken();
+
+            return redirect()->route('login');
+        }
+
         return redirect()->route($user->isAdmin() ? 'dashboard' : ($user->canRecordDistributions() ? 'admin.distribution' : 'dashboard'));
-    }
-
-    public function showChangePassword()
-    {
-        return Inertia::render('Auth/ChangePassword');
-    }
-
-    public function changePassword(Request $request)
-    {
-        $validated = $request->validate([
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
-        ]);
-
-        $request->user()->update([
-            'password' => $validated['password'],
-            'password_changed' => true
-        ]);
-
-        return redirect()->route('dashboard')->with('success', 'Your password has been updated successfully.');
     }
 
     public function updatePassword(Request $request)

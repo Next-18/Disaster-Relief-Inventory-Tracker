@@ -96,6 +96,7 @@ function runAction(id, action, url) {
         <div class="qr-modal-content">
             <div class="qr-image-frame"><img v-if="viewedBeneficiary?.qr_code" :src="qrUrl(viewedBeneficiary)" :alt="`QR code for ${viewedBeneficiary.full_name}`"></div>
             <p>Scan this code to verify the beneficiary.</p>
+            <p v-if="viewedBeneficiary?.qr_token" class="qr-short-code">Code: <b>{{ viewedBeneficiary.qr_token }}</b></p>
         </div>
         <div class="modal-actions qr-modal-actions"><button class="cancel-button" type="button" @click="modal?.close()">Close</button><a v-if="viewedBeneficiary?.qr_code" class="primary-action qr-download" :href="routes.qrDownload.replace('__ID__', encodeURIComponent(viewedBeneficiary.id))">Download QR code</a></div>
     </AdminModal>
@@ -112,6 +113,7 @@ function runAction(id, action, url) {
 .qr-modal-heading h3 { overflow-wrap: anywhere; color: #173b67; font-size: 16px; }
 .qr-modal-heading p { margin-top: 4px; }
 .qr-modal-content { display: grid; justify-items: center; gap: 13px; padding: 22px 24px 24px; }
+.qr-short-code { color: #173b67; font-size: 15px; letter-spacing: .16em; }
 .qr-image-frame { display: grid; width: 100%; max-width: 292px; aspect-ratio: 1; place-items: center; padding: 18px; border: 1px solid #edf1f5; border-radius: 14px; background: #f8fafc; }
 .qr-image-frame img { display: block; width: 100%; max-width: 250px; aspect-ratio: 1; object-fit: contain; padding: 9px; border: 1px solid #e6ebf1; border-radius: 9px; background: #fff; }
 .qr-modal-content > p { margin: 0; color: #7b8797; font-size: 11px; text-align: center; }
