@@ -15,6 +15,9 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    // Initial administrator password, read from the environment.
+    'admin_seed_password' => env('ADMIN_SEED_PASSWORD'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

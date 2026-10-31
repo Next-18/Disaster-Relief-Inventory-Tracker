@@ -46,7 +46,7 @@ function showQr(beneficiary) {
 }
 
 function qrUrl(beneficiary) {
-    return `${routes.value.qrBase}/${encodeURIComponent(beneficiary.qr_code)}`;
+    return routes.value.qrImage.replace('__ID__', encodeURIComponent(beneficiary.id));
 }
 
 function runAction(id, action, url) {

@@ -61,6 +61,7 @@ class HandleInertiaRequests extends Middleware
                 'packageUpdate' => route('admin.packages.update', ['id' => '__ID__']),
                 'packageDelete' => route('admin.packages.delete', ['id' => '__ID__']),
                 'qrCodes' => route('admin.qr-codes'),
+                'qrImage' => route('admin.qr-codes.image', ['id' => '__ID__']),
                 'qrDownload' => route('admin.qr-codes.download', ['id' => '__ID__']),
                 'lostQr' => route('admin.lost-qr'),
                 'lostQrReport' => route('admin.lost-qr.report', ['id' => '__ID__']),
@@ -78,7 +79,6 @@ class HandleInertiaRequests extends Middleware
                 'register' => route('register'),
                 'registerAttempt' => route('register.attempt'),
                 'logo' => asset('images/logo.png'),
-                'qrBase' => asset('qr-codes'),
             ],
         ];
     }

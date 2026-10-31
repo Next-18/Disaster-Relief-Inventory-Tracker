@@ -561,7 +561,7 @@ function priorityClass(priority) {
 
     <AdminModal ref="qrModal" class="form-modal qr-modal" @click.self="qrModal?.close()">
         <div class="modal-title"><div><h3>QR Code</h3><p>Scan to verify beneficiary identity</p></div><button type="button" class="modal-close" aria-label="Close" @click="qrModal?.close()">×</button></div>
-        <div v-if="qrBeneficiary" class="qr-display"><img :src="`${routes.qrBase}/${qrBeneficiary.qr_code}`" :alt="`QR code for ${qrBeneficiary.full_name}`"></div>
+        <div v-if="qrBeneficiary" class="qr-display"><img :src="routes.qrImage.replace('__ID__', encodeURIComponent(qrBeneficiary.id))" :alt="`QR code for ${qrBeneficiary.full_name}`"></div>
         <div class="modal-actions"><button type="button" class="cancel-button" @click="qrModal?.close()">Close</button></div>
     </AdminModal>
 

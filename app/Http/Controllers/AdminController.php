@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use SimpleSoftwareIO\QrCode\Facades\QrCode as QRCodeGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -1015,30 +1016,36 @@ class AdminController extends Controller
         // Keep the standard four-module quiet zone so phone cameras can lock
         // onto the code reliably, including when the QR is printed.
         $qrCode = QRCodeGenerator::format('svg')->size(300)->margin(4)->errorCorrection('H')->generate($qrCodeData);
-        $fileName = 'qr_' . $newBeneficiaryNo . '_' . substr($qrToken, 0, 12) . '.svg';
-        $filePath = public_path('qr-codes/' . $fileName);
-
-        if (!file_exists(public_path('qr-codes'))) {
-            mkdir(public_path('qr-codes'), 0755, true);
+        $fileName = 'beneficiary-qr/'.bin2hex(random_bytes(32)).'.svg';
+        $disk = Storage::disk('qr_codes');
+        $stored = $disk->put($fileName, $qrCode, [
+            'ContentType' => 'image/svg+xml',
+        ]);
+        if (! $stored) {
+            throw new \RuntimeException('Unable to store the beneficiary QR code.');
         }
 
-        file_put_contents($filePath, $qrCode);
-        DB::transaction(function () use ($beneficiary, $newBeneficiaryNo, $fileName, $qrToken, $wasReportedLost) {
-            if ($wasReportedLost) {
-                $beneficiary->beneficiary_no = $newBeneficiaryNo;
-                $beneficiary->user?->update(['email' => $newBeneficiaryNo]);
-            }
+        try {
+            DB::transaction(function () use ($beneficiary, $newBeneficiaryNo, $fileName, $qrToken, $wasReportedLost) {
+                if ($wasReportedLost) {
+                    $beneficiary->beneficiary_no = $newBeneficiaryNo;
+                    $beneficiary->user?->update(['email' => $newBeneficiaryNo]);
+                }
 
-            $beneficiary->qr_code = $fileName;
-            $beneficiary->qr_token = $qrToken;
-            $beneficiary->qr_revoked = false;
-            $beneficiary->save();
-        });
+                $beneficiary->qr_code = $fileName;
+                $beneficiary->qr_token = $qrToken;
+                $beneficiary->qr_revoked = false;
+                $beneficiary->save();
+            });
+        } catch (\Throwable $exception) {
+            $disk->delete($fileName);
+            throw $exception;
+        }
 
         $auditAction = $wasReportedLost ? 'replace' : 'create';
         $auditMessage = $wasReportedLost
-            ? "Replaced lost QR and beneficiary code for {$beneficiary->full_name}: {$previousBeneficiaryNo} → {$newBeneficiaryNo}"
-            : "Generated QR code for beneficiary: {$beneficiary->full_name} ({$newBeneficiaryNo})";
+            ? 'Replaced a lost beneficiary QR code.'
+            : 'Generated a beneficiary QR code.';
         $this->logAudit($auditAction, 'qr-codes', $auditMessage);
 
         $successMessage = $wasReportedLost
@@ -1048,14 +1055,52 @@ class AdminController extends Controller
         return redirect()->back()->with('success', $successMessage);
     }
 
+    public function showQRCode($id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        $fileName = $this->activeQrStorageKey($beneficiary);
+        $disk = Storage::disk('qr_codes');
+        abort_unless($disk->exists($fileName), 404);
+
+        return response($disk->get($fileName), 200, [
+            'Content-Type' => 'image/svg+xml',
+            'Content-Disposition' => 'inline; filename="beneficiary-qr.svg"',
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function downloadQRCode($id)
     {
         $beneficiary = Beneficiary::findOrFail($id);
-        if (!$beneficiary->qr_code) {
-            return redirect()->route('admin.qr-codes')->with('error', 'QR code not found for this beneficiary.');
-        }
-        $filePath = public_path('qr-codes/' . $beneficiary->qr_code);
-        return response()->download($filePath);
+        $fileName = $this->activeQrStorageKey($beneficiary);
+        $disk = Storage::disk('qr_codes');
+        abort_unless($disk->exists($fileName), 404);
+
+        return response()->streamDownload(
+            function () use ($disk, $fileName): void {
+                echo $disk->get($fileName);
+            },
+            'beneficiary-qr.svg',
+            [
+                'Content-Type' => 'image/svg+xml',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+        );
+    }
+
+    private function activeQrStorageKey(Beneficiary $beneficiary): string
+    {
+        $fileName = $beneficiary->qr_code;
+        abort_if(
+            $beneficiary->qr_revoked
+                || ! is_string($fileName)
+                || preg_match('/\Abeneficiary-qr\/[a-f0-9]{64}\.svg\z/', $fileName) !== 1,
+            404,
+        );
+
+        return $fileName;
     }
 
     public function lostQr()

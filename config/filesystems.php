@@ -60,6 +60,18 @@ return [
             'report' => false,
         ],
 
+        'qr_codes' => [
+            'driver' => 'r2',
+            'key' => env('QR_STORAGE_ACCESS_KEY_ID'),
+            'secret' => env('QR_STORAGE_SECRET_ACCESS_KEY'),
+            'region' => env('QR_STORAGE_REGION', 'auto'),
+            'bucket' => env('QR_STORAGE_BUCKET'),
+            'endpoint' => env('QR_STORAGE_ENDPOINT'),
+            'use_path_style_endpoint' => env('QR_STORAGE_USE_PATH_STYLE_ENDPOINT', true),
+            'throw' => true,
+            'report' => true,
+        ],
+
     ],
 
     /*
