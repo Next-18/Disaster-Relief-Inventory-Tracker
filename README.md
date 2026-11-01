@@ -34,7 +34,7 @@ For local demonstration data, review `DatabaseSeeder` before running `php artisa
 Laravel must invoke its scheduler every minute for overdue distribution cleanup to run. The project schedule also prunes expired Sanctum tokens daily. On a local Windows Laragon machine, create a Task Scheduler task with a one-minute repeat trigger and this action, which starts the scheduler without opening a console window:
 
 ```text
-powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "<project path>\scripts\run-laravel-scheduler.ps1"
+wscript.exe "<project path>\scripts\run-laravel-scheduler.vbs" "<full path to php.exe>"
 ```
 
 Production servers should use their process manager or cron instead; for cron, run `php /absolute/path/to/project/artisan schedule:run` once per minute. See [DEPLOYMENT.md](DEPLOYMENT.md) for the release checklist. Check `php artisan schedule:list` to confirm the overdue distribution command appears every minute.

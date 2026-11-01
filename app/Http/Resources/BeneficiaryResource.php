@@ -17,7 +17,7 @@ class BeneficiaryResource extends JsonResource
         return [
             'id' => $this->id,
             'beneficiary_no' => $this->beneficiary_no,
-            'qr_code' => $this->qr_code,
+            'qr_code' => $this->when($isAdmin || $isOwner, $this->qr_code),
             'qr_token' => $this->when($isOwner && $this->qr_code && ! $this->qr_revoked, $this->qr_token),
             'qr_revoked' => $this->when($isOwner, (bool) $this->qr_revoked),
             'full_name' => $this->full_name,

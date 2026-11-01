@@ -12,7 +12,14 @@ class BeneficiaryController extends Controller
 {
     public function index(Request $request)
     {
+        $validated = $request->validate([
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'offset' => ['sometimes', 'integer', 'min:0'],
+        ]);
+        $limit = (int) ($validated['limit'] ?? 100);
+        $offset = (int) ($validated['offset'] ?? 0);
         $query = Beneficiary::query();
+        $isAdmin = $request->user()->isAdmin();
 
         if (! $request->user()->canReleasePackages()) {
             $query->whereKey($request->user()->beneficiary_id);
@@ -20,11 +27,14 @@ class BeneficiaryController extends Controller
 
         if ($request->filled('search')) {
             $search = $request->input('search');
-            $query->where(function ($q) use ($search) {
+            $query->where(function ($q) use ($search, $isAdmin) {
                 $q->where('full_name', 'like', "%{$search}%")
-                  ->orWhere('beneficiary_no', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%")
-                  ->orWhere('contact_number', 'like', "%{$search}%");
+                  ->orWhere('beneficiary_no', 'like', "%{$search}%");
+
+                if ($isAdmin) {
+                    $q->orWhere('address', 'like', "%{$search}%")
+                      ->orWhere('contact_number', 'like', "%{$search}%");
+                }
             });
         }
 
@@ -36,12 +46,16 @@ class BeneficiaryController extends Controller
             $query->where('priority_type', $request->priority_type);
         }
 
-        $beneficiaries = $query->orderBy('full_name')->get();
+        $total = (clone $query)->count();
+        $beneficiaries = $query->orderBy('full_name')->orderBy('id')->skip($offset)->take($limit)->get();
 
         return response()->json([
             'success' => true,
             'data' => BeneficiaryResource::collection($beneficiaries),
-            'count' => $beneficiaries->count(),
+            'count' => $total,
+            'returned' => $beneficiaries->count(),
+            'total' => $total,
+            'next_offset' => $offset + $beneficiaries->count() < $total ? $offset + $beneficiaries->count() : null,
         ]);
     }
 

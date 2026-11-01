@@ -120,9 +120,9 @@ class AdminController extends Controller
 
     private function generateTemporaryPassword()
     {
-        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
         $password = '';
-        for ($i = 0; $i < 6; $i++) {
+        for ($i = 0; $i < 12; $i++) {
             $password .= $chars[random_int(0, strlen($chars) - 1)];
         }
         return $password;

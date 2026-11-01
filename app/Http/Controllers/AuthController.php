@@ -58,36 +58,28 @@ class AuthController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if ($user) {
-                if ($user->password_changed) {
-                    throw ValidationException::withMessages([
-                        'beneficiary_no' => ['An account is already active. Sign in through the mobile app.'],
-                    ]);
-                }
-
-                if (empty($validated['temporary_password']) || ! Hash::check($validated['temporary_password'], $user->password)) {
-                    throw ValidationException::withMessages([
-                        'temporary_password' => ['The temporary password is incorrect. Check the credentials provided by your administrator.'],
-                    ]);
-                }
-
-                $user->password = $validated['password'];
-                $user->username ??= User::uniqueUsernameFor($lockedBeneficiary->full_name);
-                $user->password_changed = true;
-                $user->save();
-
-                return;
+            if (! $user) {
+                throw ValidationException::withMessages([
+                    'beneficiary_no' => ['An account must be provisioned by an administrator before it can be activated. Please contact your Barangay Administrator.'],
+                ]);
             }
 
-            User::create([
-                'name' => $lockedBeneficiary->full_name,
-                'email' => $lockedBeneficiary->beneficiary_no,
-                'username' => User::uniqueUsernameFor($lockedBeneficiary->full_name),
-                'password' => $validated['password'],
-                'beneficiary_id' => $lockedBeneficiary->id,
-                'role' => 'user',
-                'password_changed' => true,
-            ]);
+            if ($user->password_changed) {
+                throw ValidationException::withMessages([
+                    'beneficiary_no' => ['An account is already active. Sign in through the mobile app.'],
+                ]);
+            }
+
+            if (empty($validated['temporary_password']) || ! Hash::check($validated['temporary_password'], $user->password)) {
+                throw ValidationException::withMessages([
+                    'temporary_password' => ['The temporary password is incorrect. Check the credentials provided by your administrator.'],
+                ]);
+            }
+
+            $user->password = $validated['password'];
+            $user->username ??= User::uniqueUsernameFor($lockedBeneficiary->full_name);
+            $user->password_changed = true;
+            $user->save();
         });
 
         return redirect()->route('login')->with('success', 'Account activated successfully. You can now sign in to the mobile app with your username and new password.');

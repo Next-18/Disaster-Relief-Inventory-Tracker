@@ -67,6 +67,40 @@ class MobileApiWorkflowTest extends TestCase
             ->assertJsonMissing(['package_name' => 'Empty stock pack']);
     }
 
+    public function test_beneficiary_api_limits_results_and_hides_private_fields_from_staff(): void
+    {
+        Beneficiary::create([
+            'beneficiary_no' => 'BEN-5101',
+            'full_name' => 'Ava Santos',
+            'address' => 'Private Street',
+            'contact_number' => '+639123456789',
+            'qr_code' => 'private-qr.svg',
+            'status' => 'Active',
+        ]);
+        Beneficiary::create([
+            'beneficiary_no' => 'BEN-5102',
+            'full_name' => 'Bea Santos',
+            'status' => 'Active',
+        ]);
+
+        Sanctum::actingAs(User::factory()->create(['role' => 'staff']));
+
+        $this->getJson('/api/beneficiaries?limit=1')
+            ->assertOk()
+            ->assertJsonPath('count', 2)
+            ->assertJsonPath('returned', 1)
+            ->assertJsonPath('total', 2)
+            ->assertJsonPath('next_offset', 1)
+            ->assertJsonMissingPath('data.0.contact_number')
+            ->assertJsonMissingPath('data.0.address')
+            ->assertJsonMissingPath('data.0.qr_code');
+
+        $this->getJson('/api/beneficiaries?search=Private%20Street')
+            ->assertOk()
+            ->assertJsonPath('count', 0)
+            ->assertJsonPath('returned', 0);
+    }
+
     public function test_staff_can_release_a_pending_package_without_deducting_reserved_stock_twice(): void
     {
         $staff = User::factory()->create(['role' => 'staff']);

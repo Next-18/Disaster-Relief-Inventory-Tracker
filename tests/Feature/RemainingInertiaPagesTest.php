@@ -222,4 +222,25 @@ class RemainingInertiaPagesTest extends TestCase
         $this->assertTrue($user->password_changed);
         $this->assertTrue(Hash::check('ReliefPass2026', $user->password));
     }
+
+    public function test_beneficiary_cannot_activate_an_account_that_was_not_provisioned(): void
+    {
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-9011',
+            'full_name' => 'Marco Reyes',
+            'status' => 'Active',
+        ]);
+
+        $this->from(route('register'))
+            ->post(route('register.attempt'), [
+                'full_name' => $beneficiary->full_name,
+                'beneficiary_no' => $beneficiary->beneficiary_no,
+                'password' => 'ReliefPass2026',
+                'password_confirmation' => 'ReliefPass2026',
+            ])
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors('beneficiary_no');
+
+        $this->assertDatabaseMissing('users', ['beneficiary_id' => $beneficiary->id]);
+    }
 }

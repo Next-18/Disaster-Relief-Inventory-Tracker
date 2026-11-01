@@ -17,6 +17,12 @@ class DistributionController extends Controller
 {
     public function index(Request $request)
     {
+        $validated = $request->validate([
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'offset' => ['sometimes', 'integer', 'min:0'],
+        ]);
+        $limit = (int) ($validated['limit'] ?? 100);
+        $offset = (int) ($validated['offset'] ?? 0);
         $query = Distribution::with(['beneficiary', 'reliefPackage']);
 
         if (! $request->user()->canReleasePackages()) {
@@ -55,12 +61,16 @@ class DistributionController extends Controller
             $query->where('date_released', '<=', $request->end_date);
         }
 
-        $distributions = $query->latest('date_released')->get();
+        $total = (clone $query)->count();
+        $distributions = $query->latest('date_released')->orderByDesc('id')->skip($offset)->take($limit)->get();
 
         return response()->json([
             'success' => true,
             'data' => DistributionResource::collection($distributions),
-            'count' => $distributions->count(),
+            'count' => $total,
+            'returned' => $distributions->count(),
+            'total' => $total,
+            'next_offset' => $offset + $distributions->count() < $total ? $offset + $distributions->count() : null,
         ]);
     }
 
