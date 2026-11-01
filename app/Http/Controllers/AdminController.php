@@ -146,7 +146,7 @@ class AdminController extends Controller
             }
         }
 
-        $data['beneficiary_no'] = $this->generateUniqueCode();
+       $data['beneficiary_no'] = $this->generateNextBeneficiaryNumber();
         $tempPassword = $this->generateTemporaryPassword();
 
         try {
@@ -194,7 +194,7 @@ class AdminController extends Controller
     {
         $beneficiary = Beneficiary::findOrFail($id);
         $data = $request->validate($this->beneficiaryValidationRules($id));
-        
+
         // Check for duplicate name (excluding current record)
         $existingByName = Beneficiary::where('full_name', $data['full_name'])
             ->where('id', '!=', $id)
@@ -202,7 +202,7 @@ class AdminController extends Controller
         if ($existingByName) {
             return back()->withInput()->withErrors(['full_name' => 'A beneficiary with this name already exists.']);
         }
-        
+
         // Check for duplicate contact number (excluding current record)
         if (!empty($data['contact_number'])) {
             $existingByPhone = Beneficiary::where('contact_number', $data['contact_number'])
@@ -212,7 +212,7 @@ class AdminController extends Controller
                 return back()->withInput()->withErrors(['contact_number' => 'A beneficiary with this contact number already exists.']);
             }
         }
-        
+
         $beneficiary->update($data);
         $this->logAudit('update', 'beneficiaries', "Updated beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
         return redirect()->back()->with('success', 'Beneficiary updated successfully.');
@@ -255,7 +255,7 @@ class AdminController extends Controller
 
             return $beneficiaries;
         });
-        
+
         $this->logAudit('delete', 'beneficiaries', "Bulk deleted beneficiaries: " . count($beneficiaries) . " records");
         return redirect()->back()->with('success', count($beneficiaries) . ' beneficiaries deleted successfully.');
     }
@@ -272,7 +272,7 @@ class AdminController extends Controller
         $status = $request->input('status');
 
         $updated = Beneficiary::whereIn('id', $ids)->update(['status' => $status]);
-        
+
         $this->logAudit('update', 'beneficiaries', "Bulk status change to {$status}: {$updated} beneficiaries");
         return redirect()->back()->with('success', $updated . ' beneficiaries updated successfully.');
     }
@@ -282,20 +282,20 @@ class AdminController extends Controller
         $query = Beneficiary::query();
         $this->applyBeneficiaryFilters($query, $request);
         $beneficiaries = $query->orderBy('full_name')->get();
-        
+
         $filename = 'beneficiaries_' . date('Y-m-d') . '.csv';
-        
+
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
-        
+
         $callback = function() use ($beneficiaries) {
             $handle = fopen('php://output', 'w');
-            
+
             // Add CSV headers
             fputcsv($handle, ['Beneficiary No', 'Full Name', 'Contact Number', 'Address', 'Household Size', 'Priority Type', 'Status', 'Created At']);
-            
+
             // Add data rows
             foreach ($beneficiaries as $beneficiary) {
                 fputcsv($handle, [
@@ -309,12 +309,12 @@ class AdminController extends Controller
                     $beneficiary->created_at->format('Y-m-d H:i:s')
                 ]);
             }
-            
+
             fclose($handle);
         };
-        
+
         $this->logAudit('export', 'beneficiaries', "Exported beneficiaries: " . count($beneficiaries) . " records");
-        
+
         return response()->stream($callback, 200, $headers);
     }
 
@@ -964,7 +964,7 @@ class AdminController extends Controller
     public function qrCodes(Request $request)
     {
         $query = Beneficiary::where('status', 'Active')->orderBy('full_name');
-        
+
         if ($request->has('search')) {
             $search = $request->input('search');
             $query->where(function($q) use ($search) {
@@ -972,47 +972,79 @@ class AdminController extends Controller
                   ->orWhere('beneficiary_no', 'like', "%{$search}%");
             });
         }
-        
+
         $beneficiaries = $query->get();
-        
+
         if ($request->ajax() && !$request->header('X-Inertia')) {
             return response()->json([
                 'beneficiaries' => $beneficiaries,
                 'count' => $beneficiaries->count()
             ]);
         }
-        
+
         return Inertia::render('Admin/QrCodes', [
             'beneficiaries' => $beneficiaries,
             'filters' => $request->only(['search']),
         ]);
     }
 
-    protected function generateUniqueCode(): string
-    {
-        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        do {
-            $token = '';
-            for ($index = 0; $index < 6; $index++) {
-                $token .= $alphabet[random_int(0, strlen($alphabet) - 1)];
-            }
-            $exists = Beneficiary::query()
-                ->where(fn ($query) => $query->where('beneficiary_no', $token)->orWhere('qr_token', $token))
-                ->exists()
-                || User::query()->where('email', $token)->exists();
-        } while ($exists);
+   // Generate sequential beneficiary numbers: BEN-0001, BEN-0002, etc.
+protected function generateNextBeneficiaryNumber(): string
+{
+    $highestNumber = Beneficiary::query()
+        ->where('beneficiary_no', 'like', 'BEN-%')
+        ->pluck('beneficiary_no')
+        ->map(function ($number) {
+            return preg_match('/^BEN-(\d+)$/i', (string) $number, $matches)
+                ? (int) $matches[1]
+                : 0;
+        })
+        ->max() ?? 0;
 
-        return $token;
-    }
+    return 'BEN-' . str_pad(
+        (string) ($highestNumber + 1),
+        4,
+        '0',
+        STR_PAD_LEFT
+    );
+}
+
+// Generate a unique random QR token.
+protected function generateUniqueQrToken(): string
+{
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+    do {
+        $token = '';
+
+        for ($index = 0; $index < 6; $index++) {
+            $token .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        }
+
+        $exists = Beneficiary::query()
+            ->where(function ($query) use ($token) {
+                $query->where('beneficiary_no', $token)
+                    ->orWhere('qr_token', $token);
+            })
+            ->exists()
+            || User::query()->where('email', $token)->exists();
+
+    } while ($exists);
+
+    return $token;
+}
 
     public function generateQRCode($id)
     {
         $beneficiary = Beneficiary::findOrFail($id);
-        $wasReportedLost = (bool) $beneficiary->qr_revoked;
-        $previousBeneficiaryNo = $beneficiary->beneficiary_no;
-        $newBeneficiaryNo = $wasReportedLost ? $this->generateUniqueCode() : $previousBeneficiaryNo;
-        $qrToken = $newBeneficiaryNo;
-        $qrCodeData = $qrToken;
+$wasReportedLost = (bool) $beneficiary->qr_revoked;
+$previousBeneficiaryNo = $beneficiary->beneficiary_no;
+
+$qrToken = $wasReportedLost
+    ? $this->generateUniqueQrToken()
+    : ($beneficiary->qr_token ?: $previousBeneficiaryNo);
+
+$qrCodeData = $qrToken;
         // Keep the standard four-module quiet zone so phone cameras can lock
         // onto the code reliably, including when the QR is printed.
         $qrCode = QRCodeGenerator::format('svg')->size(300)->margin(4)->errorCorrection('H')->generate($qrCodeData);
@@ -1026,11 +1058,7 @@ class AdminController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($beneficiary, $newBeneficiaryNo, $fileName, $qrToken, $wasReportedLost) {
-                if ($wasReportedLost) {
-                    $beneficiary->beneficiary_no = $newBeneficiaryNo;
-                    $beneficiary->user?->update(['email' => $newBeneficiaryNo]);
-                }
+DB::transaction(function () use ($beneficiary, $fileName, $qrToken) {
 
                 $beneficiary->qr_code = $fileName;
                 $beneficiary->qr_token = $qrToken;
@@ -1048,9 +1076,9 @@ class AdminController extends Controller
             : 'Generated a beneficiary QR code.';
         $this->logAudit($auditAction, 'qr-codes', $auditMessage);
 
-        $successMessage = $wasReportedLost
-            ? "New QR code generated. The new beneficiary code is {$newBeneficiaryNo}."
-            : 'QR code generated successfully.';
+       $successMessage = $wasReportedLost
+    ? 'Replacement QR code generated successfully. The beneficiary number and login credentials remain unchanged.'
+    : 'QR code generated successfully.';
 
         return redirect()->back()->with('success', $successMessage);
     }
@@ -1356,32 +1384,32 @@ class AdminController extends Controller
     public function auditLogs(Request $request)
     {
         $query = AuditLog::with('user')->latest();
-        
+
         // Filter by module
         if ($request->has('module') && $request->module !== 'all') {
             $query->where('module', $request->module);
         }
-        
+
         // Filter by action
         if ($request->has('action') && $request->action !== 'all') {
             $query->where('action', $request->action);
         }
-        
+
         // Filter by date range
         if ($request->has('start_date')) {
             $query->where('created_at', '>=', $request->start_date);
         }
-        
+
         if ($request->has('end_date')) {
             $query->where('created_at', '<=', $request->end_date . ' 23:59:59');
         }
-        
+
         $auditLogs = $query->paginate(20)->withQueryString();
-        
+
         // Get unique modules and actions for filters
         $modules = AuditLog::distinct()->pluck('module')->sort();
         $actions = AuditLog::distinct()->pluck('action')->sort();
-        
+
         return Inertia::render('Admin/AuditLogs', [
             'auditLogs' => $auditLogs,
             'modules' => $modules,
@@ -1411,12 +1439,12 @@ class AdminController extends Controller
             Setting::set('site_description', $request->site_description, 'string', 'general', 'Site description');
             Setting::set('contact_email', $request->contact_email, 'string', 'general', 'Contact email address');
             Setting::set('contact_phone', $request->contact_phone, 'string', 'general', 'Contact phone number');
-            
+
             // Save location settings
             Setting::set('barangay_name', $request->barangay_name, 'string', 'location', 'Barangay name');
             Setting::set('municipality', $request->municipality, 'string', 'location', 'Municipality name');
             Setting::set('province', $request->province, 'string', 'location', 'Province name');
-            
+
             $this->logAudit('update', 'settings', 'Updated site and location settings');
             return redirect()->route('admin.settings')->with('success', 'Settings updated successfully.');
         }
@@ -1461,7 +1489,7 @@ class AdminController extends Controller
     public function users()
     {
         $users = User::with('beneficiary')->latest()->paginate(10);
-        
+
         return inertia('Admin/Users', [
             'users' => $users
         ]);
@@ -1478,11 +1506,11 @@ class AdminController extends Controller
 
         $data['password'] = bcrypt($data['password']);
         $data['password_changed'] = true; // Admin accounts don't need forced change
-        
+
         $user = User::create($data);
-        
+
         $this->logAudit('create', 'users', "Created {$user->role} account for: {$user->name}");
-        
+
         return redirect()->route('admin.users')->with('success', ucfirst($user->role) . ' account created successfully.');
     }
 
@@ -1492,11 +1520,11 @@ class AdminController extends Controller
         $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*';
         $charactersLength = strlen($characters);
         $randomPassword = '';
-        
+
         for ($i = 0; $i < $length; $i++) {
             $randomPassword .= $characters[rand(0, $charactersLength - 1)];
         }
-        
+
         return $randomPassword;
     }
 
@@ -1506,24 +1534,24 @@ class AdminController extends Controller
         $words = explode(' ', $fullName);
         $firstWord = strtolower($words[0]);
         $password = '';
-        
+
         // Use first word + random 2-digit number
         $password = $firstWord . rand(10, 99);
-        
+
         // Add a special character for security
         $specialChars = ['!', '@', '#', '$'];
         $password .= $specialChars[array_rand($specialChars)];
-        
+
         // Capitalize first letter
         $password = ucfirst($password);
-        
+
         return $password;
     }
 
     public function updateUser(Request $request, $id)
     {
         $user = User::findOrFail($id);
-        
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $id],
@@ -1550,17 +1578,17 @@ class AdminController extends Controller
         }
 
         $user->update($data);
-        
+
         $beneficiaryName = $user->beneficiary ? $user->beneficiary->full_name : 'No beneficiary linked';
         $this->logAudit('update', 'users', "Updated user account for: {$beneficiaryName}");
-        
+
         return redirect()->route('admin.users')->with('success', 'User account updated successfully.');
     }
 
     public function deleteUser($id)
     {
         $user = User::findOrFail($id);
-        
+
         if ($user->id === auth()->id()) {
             return back()->with('error', 'You cannot delete your own account.');
         }
@@ -1568,12 +1596,12 @@ class AdminController extends Controller
         if (Distribution::where('distributed_by', $user->id)->exists()) {
             return back()->with('error', 'This account recorded distributions and cannot be deleted. Update its role or retain it to preserve the audit history.');
         }
-        
+
         $beneficiaryName = $user->beneficiary ? $user->beneficiary->full_name : 'No beneficiary linked';
         $user->delete();
-        
+
         $this->logAudit('delete', 'users', "Deleted user account for: {$beneficiaryName}");
-        
+
         return redirect()->route('admin.users')->with('success', 'User account deleted successfully.');
     }
 }

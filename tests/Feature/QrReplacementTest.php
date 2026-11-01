@@ -49,10 +49,11 @@ class QrReplacementTest extends TestCase
 
         $beneficiary->refresh();
 
-        $this->assertNotSame('BEN-7001', $beneficiary->beneficiary_no);
-        $this->assertSame($beneficiary->beneficiary_no, $beneficiary->qr_token);
-        $this->assertFalse($beneficiary->qr_revoked);
-        $this->assertSame($beneficiary->beneficiary_no, $user->fresh()->email);
+       $this->assertSame('BEN-7001', $beneficiary->beneficiary_no);
+$this->assertNotSame('OLDQR7', $beneficiary->qr_token);
+$this->assertMatchesRegularExpression('/^[A-HJ-NP-Z2-9]{6}$/', $beneficiary->qr_token);
+$this->assertFalse($beneficiary->qr_revoked);
+$this->assertSame('BEN-7001', $user->fresh()->email);
         $this->assertFalse(Beneficiary::query()->forQrPayload('OLDQR7')->exists());
         $this->assertTrue(Beneficiary::query()->forQrPayload($beneficiary->qr_token)->exists());
         $this->getJson(route('admin.distribution.lookup', ['code' => 'OLDQR7']))->assertNotFound();
@@ -105,11 +106,11 @@ class QrReplacementTest extends TestCase
             ->assertRedirect();
 
         $replacement = $beneficiary->fresh();
-        $this->assertTrue($replacement->qr_token === $replacement->beneficiary_no);
-        $this->assertFalse($replacement->qr_revoked);
-        $this->assertNotSame('BEN-7003', $replacement->beneficiary_no);
-        $this->assertSame($replacement->beneficiary_no, $user->fresh()->email);
-        $this->assertFalse(Beneficiary::query()->forQrPayload('LEGACY7')->exists());
+$this->assertSame('BEN-7003', $replacement->beneficiary_no);
+$this->assertNotSame('LEGACY7', $replacement->qr_token);
+$this->assertMatchesRegularExpression('/^[A-HJ-NP-Z2-9]{6}$/', $replacement->qr_token);
+$this->assertFalse($replacement->qr_revoked);
+$this->assertSame('BEN-7003', $user->fresh()->email);        $this->assertFalse(Beneficiary::query()->forQrPayload('LEGACY7')->exists());
         $this->assertFalse(Beneficiary::query()->forQrPayload('BEN-7003')->exists());
         $this->assertMatchesRegularExpression('/\Abeneficiary-qr\/[a-f0-9]{64}\.svg\z/', $replacement->qr_code);
         Storage::disk('qr_codes')->assertExists($replacement->qr_code);
