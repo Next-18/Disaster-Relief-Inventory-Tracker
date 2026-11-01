@@ -15,10 +15,12 @@ Route::get('/dashboard', [AuthController::class, 'dashboard'])->middleware(['aut
 Route::put('/admin/account/password', [AuthController::class, 'updatePassword'])->middleware('auth')->name('admin.account.password');
 Route::middleware(['auth', 'distribution-operator'])->group(function () {
     Route::get('/admin/distribution', [AdminController::class, 'distribution'])->name('admin.distribution');
-    Route::get('/admin/distribution/lookup', [AdminController::class, 'lookupBeneficiaryForCheckIn'])->name('admin.distribution.lookup');
     Route::get('/admin/support', [SupportController::class, 'index'])->name('admin.support');
     Route::post('/admin/support', [SupportController::class, 'store'])->name('admin.support.store');
 });
+Route::get('/admin/distribution/lookup', [AdminController::class, 'lookupBeneficiaryForCheckIn'])
+    ->middleware(['auth', 'distribution-staff'])
+    ->name('admin.distribution.lookup');
 Route::patch('/admin/support/{ticket}', [SupportController::class, 'update'])
     ->middleware(['auth', 'admin'])->name('admin.support.update');
 Route::middleware(['auth', 'distribution-staff'])->group(function () {
