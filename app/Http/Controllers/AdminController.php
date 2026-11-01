@@ -176,6 +176,8 @@ class AdminController extends Controller
             ]);
         }
 
+        $this->issueQRCode($beneficiary);
+
         $credentials = [
             'username' => $beneficiary->user()->value('username'),
             'beneficiary_no' => $beneficiary->beneficiary_no,
@@ -1037,14 +1039,19 @@ protected function generateUniqueQrToken(): string
     public function generateQRCode($id)
     {
         $beneficiary = Beneficiary::findOrFail($id);
-$wasReportedLost = (bool) $beneficiary->qr_revoked;
-$previousBeneficiaryNo = $beneficiary->beneficiary_no;
+        $successMessage = $this->issueQRCode($beneficiary);
 
-$qrToken = $wasReportedLost
-    ? $this->generateUniqueQrToken()
-    : ($beneficiary->qr_token ?: $previousBeneficiaryNo);
+        return redirect()->back()->with('success', $successMessage);
+    }
 
-$qrCodeData = $qrToken;
+    private function issueQRCode(Beneficiary $beneficiary): string
+    {
+        $wasReportedLost = (bool) $beneficiary->qr_revoked;
+        $previousBeneficiaryNo = $beneficiary->beneficiary_no;
+        $qrToken = $wasReportedLost
+            ? $this->generateUniqueQrToken()
+            : ($beneficiary->qr_token ?: $previousBeneficiaryNo);
+        $qrCodeData = $qrToken;
         // Keep the standard four-module quiet zone so phone cameras can lock
         // onto the code reliably, including when the QR is printed.
         $qrCode = QRCodeGenerator::format('svg')->size(300)->margin(4)->errorCorrection('H')->generate($qrCodeData);
@@ -1080,7 +1087,7 @@ DB::transaction(function () use ($beneficiary, $fileName, $qrToken) {
     ? 'Replacement QR code generated successfully. The beneficiary number and login credentials remain unchanged.'
     : 'QR code generated successfully.';
 
-        return redirect()->back()->with('success', $successMessage);
+        return $successMessage;
     }
 
     public function showQRCode($id)
