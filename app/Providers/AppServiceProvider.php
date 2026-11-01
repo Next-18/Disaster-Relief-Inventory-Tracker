@@ -1,14 +1,13 @@
-
 <?php
 
 namespace App\Providers;
 
-use Illuminate\Support\Facades\URL;
 use App\Filesystem\R2FilesystemAdapter;
 use Aws\S3\S3Client;
 use Illuminate\Filesystem\FilesystemAdapter as LaravelFilesystemAdapter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use League\Flysystem\Filesystem;
 
@@ -35,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
         // Supports older MySQL/MariaDB installations with a 1000-byte index limit.
         Schema::defaultStringLength(191);
 
+        // Register the custom R2 filesystem adapter.
         Storage::extend('r2', function ($app, array $config) {
             $client = new S3Client([
                 'credentials' => [
