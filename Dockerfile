@@ -1,3 +1,4 @@
+
 # ==========================================
 # STAGE 1: Build Vue / Vite frontend
 # ==========================================
@@ -8,9 +9,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy the project while respecting .dockerignore
+# Copy project files
 COPY . .
 
+# Build frontend assets
 RUN npm run build
 
 
@@ -44,14 +46,16 @@ RUN apt-get update && apt-get install -y \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*
 
-# Apache serves Laravel's public directory
+
+# ==========================================
+# APACHE CONFIGURATION
+# ==========================================
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
 RUN sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
     /etc/apache2/sites-available/000-default.conf \
     /etc/apache2/apache2.conf
 
-# Enable Laravel URL rewriting
 RUN printf '<Directory /var/www/html/public>\n\
     AllowOverride All\n\
     Require all granted\n\
@@ -59,12 +63,14 @@ RUN printf '<Directory /var/www/html/public>\n\
     > /etc/apache2/conf-available/laravel.conf \
     && a2enconf laravel
 
-# Install Composer
+
+# ==========================================
+# COMPOSER
+# ==========================================
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Install production PHP dependencies
 COPY composer.json composer.lock ./
 
 RUN composer install \
@@ -74,19 +80,27 @@ RUN composer install \
     --no-scripts \
     --no-autoloader
 
-# Copy Laravel application
+
+# ==========================================
+# LARAVEL APPLICATION
+# ==========================================
 COPY . .
 
-# Generate optimized Composer autoloader after copying source
 RUN composer dump-autoload \
     --no-dev \
     --optimize \
     --no-scripts
 
-# Copy compiled frontend assets
+
+# ==========================================
+# FRONTEND BUILD ASSETS
+# ==========================================
 COPY --from=frontend /app/public/build ./public/build
 
-# Prepare Laravel writable directories
+
+# ==========================================
+# STORAGE PERMISSIONS
+# ==========================================
 RUN mkdir -p \
     storage/framework/cache \
     storage/framework/sessions \
@@ -96,8 +110,21 @@ RUN mkdir -p \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# Render default port
+
+# ==========================================
+# RENDER PORT
+# ==========================================
 EXPOSE 10000
 
-# Configure Apache, prepare Laravel, run pending migrations, then start Apache
-CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; php artisan migrate --force; exec apache2-foreground"]
+
+# ==========================================
+# APPLICATION STARTUP
+# ==========================================
+# 1. Configure Apache port
+# 2. Discover Laravel packages
+# 3. Cache Laravel configuration
+# 4. Run pending migrations
+# 5. Seed production administrator
+# 6. Start Apache
+
+CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; php artisan migrate --force; php artisan db:seed --class='Database\\Seeders\\AdminOnlySeeder' --force; exec apache2-foreground"]
