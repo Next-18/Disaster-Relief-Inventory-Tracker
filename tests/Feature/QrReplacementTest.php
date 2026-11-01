@@ -127,6 +127,50 @@ $this->assertSame('BEN-7003', $user->fresh()->email);        $this->assertFalse(
         $this->getJson('/api/beneficiaries/qr/'.$replacement->qr_token)->assertOk();
     }
 
+    public function test_lost_qr_generate_new_rotates_beneficiary_code_and_qr_token(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-7005',
+            'qr_code' => null,
+            'qr_token' => 'OLDQR5',
+            'qr_revoked' => true,
+            'full_name' => 'Replacement Test',
+            'status' => 'Active',
+        ]);
+        $user = User::factory()->create([
+            'name' => $beneficiary->full_name,
+            'email' => $beneficiary->beneficiary_no,
+            'username' => 'replacement.test',
+            'role' => 'user',
+            'beneficiary_id' => $beneficiary->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.lost-qr.generate', $beneficiary->id))
+            ->assertRedirect(route('admin.lost-qr'))
+            ->assertSessionHas('success', fn (string $message) => str_contains($message, 'New beneficiary code:'));
+
+        $replacement = $beneficiary->fresh();
+        $this->assertNotSame('BEN-7005', $replacement->beneficiary_no);
+        $this->assertNotSame('OLDQR5', $replacement->qr_token);
+        $this->assertSame($replacement->beneficiary_no, $user->fresh()->email);
+        $this->assertFalse($replacement->qr_revoked);
+        $this->assertFalse(Beneficiary::query()->forQrPayload('BEN-7005')->exists());
+        $this->assertFalse(Beneficiary::query()->forQrPayload('OLDQR5')->exists());
+        $this->assertTrue(Beneficiary::query()->forQrPayload($replacement->qr_token)->exists());
+        Storage::disk('qr_codes')->assertExists($replacement->qr_code);
+
+        $staff = User::factory()->create(['role' => 'staff']);
+        $this->actingAs($staff)
+            ->getJson(route('admin.distribution.lookup', ['code' => 'BEN-7005']))
+            ->assertNotFound();
+        $this->getJson(route('admin.distribution.lookup', ['code' => 'OLDQR5']))
+            ->assertNotFound();
+        $this->getJson(route('admin.distribution.lookup', ['code' => $replacement->qr_token]))
+            ->assertOk();
+    }
+
     public function test_storage_failure_after_reporting_lost_keeps_the_old_qr_revoked(): void
     {
         $admin = User::factory()->admin()->create();

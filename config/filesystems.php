@@ -1,5 +1,14 @@
 <?php
 
+$qrStorageConfigured = env('QR_STORAGE_ACCESS_KEY_ID')
+    && env('QR_STORAGE_SECRET_ACCESS_KEY')
+    && env('QR_STORAGE_BUCKET')
+    && env('QR_STORAGE_ENDPOINT');
+$qrStorageDriver = env(
+    'QR_STORAGE_DRIVER',
+    in_array(env('APP_ENV'), ['local', 'testing'], true) && ! $qrStorageConfigured ? 'local' : 'r2',
+);
+
 return [
 
     /*
@@ -61,7 +70,10 @@ return [
         ],
 
         'qr_codes' => [
-            'driver' => 'r2',
+            // Use private local storage for unconfigured local and test installs;
+            // production continues to require the configured R2 bucket.
+            'driver' => $qrStorageDriver,
+            'root' => $qrStorageDriver === 'local' ? storage_path('app/private/qr-codes') : '',
             'key' => env('QR_STORAGE_ACCESS_KEY_ID'),
             'secret' => env('QR_STORAGE_SECRET_ACCESS_KEY'),
             'region' => env('QR_STORAGE_REGION', 'auto'),

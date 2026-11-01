@@ -34,7 +34,7 @@ async function reportLost(beneficiary) {
 
 function generateNew(beneficiary) {
     processingId.value = beneficiary.id;
-    router.post(routes.value.qrGenerate.replace('__ID__', encodeURIComponent(beneficiary.id)), {}, {
+    router.post(routes.value.lostQrGenerate.replace('__ID__', encodeURIComponent(beneficiary.id)), {}, {
         preserveScroll: true,
         onFinish: () => { processingId.value = null; },
     });

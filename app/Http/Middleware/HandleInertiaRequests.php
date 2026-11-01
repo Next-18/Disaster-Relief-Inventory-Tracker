@@ -65,6 +65,7 @@ class HandleInertiaRequests extends Middleware
                 'qrDownload' => route('admin.qr-codes.download', ['id' => '__ID__']),
                 'lostQr' => route('admin.lost-qr'),
                 'lostQrReport' => route('admin.lost-qr.report', ['id' => '__ID__']),
+                'lostQrGenerate' => route('admin.lost-qr.generate', ['id' => '__ID__']),
                 'reports' => route('admin.reports'),
                 'reportExport' => route('admin.reports.export'),
                 'inventoryReportExport' => route('admin.reports.inventory-export'),

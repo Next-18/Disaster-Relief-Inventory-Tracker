@@ -1044,13 +1044,25 @@ protected function generateUniqueQrToken(): string
         return redirect()->back()->with('success', $successMessage);
     }
 
-    private function issueQRCode(Beneficiary $beneficiary): string
+    public function generateNewLostQr($id)
+    {
+        $beneficiary = Beneficiary::findOrFail($id);
+        abort_if($beneficiary->qr_code && ! $beneficiary->qr_revoked, 409);
+
+        $newBeneficiaryNo = $this->generateNextBeneficiaryNumber();
+        $successMessage = $this->issueQRCode($beneficiary, $newBeneficiaryNo);
+
+        return redirect()->route('admin.lost-qr')->with('success', $successMessage);
+    }
+
+    private function issueQRCode(Beneficiary $beneficiary, ?string $newBeneficiaryNo = null): string
     {
         $wasReportedLost = (bool) $beneficiary->qr_revoked;
-        $previousBeneficiaryNo = $beneficiary->beneficiary_no;
-        $qrToken = $wasReportedLost
+        $rotatesBeneficiaryNo = $newBeneficiaryNo !== null;
+        $isReplacement = $wasReportedLost || (! $beneficiary->qr_code && (bool) $beneficiary->qr_token);
+        $qrToken = ($isReplacement || $rotatesBeneficiaryNo)
             ? $this->generateUniqueQrToken()
-            : ($beneficiary->qr_token ?: $previousBeneficiaryNo);
+            : ($beneficiary->qr_token ?: $beneficiary->beneficiary_no);
         $qrCodeData = $qrToken;
         // Keep the standard four-module quiet zone so phone cameras can lock
         // onto the code reliably, including when the QR is printed.
@@ -1065,8 +1077,12 @@ protected function generateUniqueQrToken(): string
         }
 
         try {
-DB::transaction(function () use ($beneficiary, $fileName, $qrToken) {
+            DB::transaction(function () use ($beneficiary, $fileName, $qrToken, $newBeneficiaryNo) {
 
+                if ($newBeneficiaryNo !== null) {
+                    $beneficiary->beneficiary_no = $newBeneficiaryNo;
+                    $beneficiary->user()->update(['email' => $newBeneficiaryNo]);
+                }
                 $beneficiary->qr_code = $fileName;
                 $beneficiary->qr_token = $qrToken;
                 $beneficiary->qr_revoked = false;
@@ -1077,15 +1093,19 @@ DB::transaction(function () use ($beneficiary, $fileName, $qrToken) {
             throw $exception;
         }
 
-        $auditAction = $wasReportedLost ? 'replace' : 'create';
-        $auditMessage = $wasReportedLost
-            ? 'Replaced a lost beneficiary QR code.'
-            : 'Generated a beneficiary QR code.';
+        $auditAction = $isReplacement || $rotatesBeneficiaryNo ? 'replace' : 'create';
+        $auditMessage = $rotatesBeneficiaryNo
+            ? 'Replaced a lost beneficiary QR code and rotated the beneficiary code.'
+            : ($isReplacement
+                ? 'Replaced a lost beneficiary QR code.'
+                : 'Generated a beneficiary QR code.');
         $this->logAudit($auditAction, 'qr-codes', $auditMessage);
 
-       $successMessage = $wasReportedLost
-    ? 'Replacement QR code generated successfully. The beneficiary number and login credentials remain unchanged.'
-    : 'QR code generated successfully.';
+        $successMessage = $rotatesBeneficiaryNo
+            ? "New QR code generated. New beneficiary code: {$newBeneficiaryNo}. The previous QR and beneficiary code are no longer valid."
+            : ($isReplacement
+                ? 'Replacement QR code generated successfully.'
+                : 'QR code generated successfully.');
 
         return $successMessage;
     }

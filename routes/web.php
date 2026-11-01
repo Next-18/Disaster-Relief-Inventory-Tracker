@@ -60,6 +60,7 @@ Route::middleware(['auth', 'admin'])->group(function () {
     Route::get('/admin/qr-codes/download/{id}', [AdminController::class, 'downloadQRCode'])->name('admin.qr-codes.download');
     Route::get('/admin/lost-qr', [AdminController::class, 'lostQr'])->name('admin.lost-qr');
     Route::post('/admin/lost-qr/report/{id}', [AdminController::class, 'reportLostQr'])->name('admin.lost-qr.report');
+    Route::post('/admin/lost-qr/generate/{id}', [AdminController::class, 'generateNewLostQr'])->name('admin.lost-qr.generate');
     Route::put('/admin/distribution/{id}', [AdminController::class, 'updateDistribution'])->name('admin.distribution.update');
     Route::delete('/admin/distribution/{id}', [AdminController::class, 'deleteDistribution'])->name('admin.distribution.delete');
     Route::get('/admin/reports/inventory/export', [AdminController::class, 'exportInventoryReport'])->name('admin.reports.inventory-export');
