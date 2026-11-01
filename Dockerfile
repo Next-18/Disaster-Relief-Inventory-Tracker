@@ -1,4 +1,3 @@
-
 # ==========================================
 # STAGE 1: Build Vue / Vite frontend
 # ==========================================
@@ -100,5 +99,5 @@ RUN mkdir -p \
 # Render default port
 EXPOSE 10000
 
-# Configure Apache using Render's PORT environment variable
-CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; exec apache2-foreground"]
+# Configure Apache, prepare Laravel, run pending migrations, then start Apache
+CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; php artisan migrate --force; exec apache2-foreground"]
