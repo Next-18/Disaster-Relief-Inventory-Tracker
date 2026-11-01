@@ -1,7 +1,9 @@
+
 <?php
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\URL;
 use App\Filesystem\R2FilesystemAdapter;
 use Aws\S3\S3Client;
 use Illuminate\Filesystem\FilesystemAdapter as LaravelFilesystemAdapter;
@@ -25,6 +27,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Force HTTPS in production (Render).
+        if (config('app.env') === 'production') {
+            URL::forceScheme('https');
+        }
+
         // Supports older MySQL/MariaDB installations with a 1000-byte index limit.
         Schema::defaultStringLength(191);
 
@@ -39,6 +46,7 @@ class AppServiceProvider extends ServiceProvider
                 'endpoint' => $config['endpoint'],
                 'use_path_style_endpoint' => $config['use_path_style_endpoint'],
             ]);
+
             $adapter = new R2FilesystemAdapter(
                 $client,
                 $config['bucket'],
