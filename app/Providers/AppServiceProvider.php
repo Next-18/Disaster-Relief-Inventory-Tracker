@@ -42,9 +42,10 @@ class AppServiceProvider extends ServiceProvider
                     'secret' => $config['secret'],
                 ],
                 'region' => $config['region'],
-                'version' => 'latest',
-                'endpoint' => $config['endpoint'],
-                'use_path_style_endpoint' => $config['use_path_style_endpoint'],
+'version' => 'latest',
+'signature_version' => 'v4',
+'endpoint' => $config['endpoint'],
+'use_path_style_endpoint' => $config['use_path_style_endpoint'],
             ]);
 
             $adapter = new R2FilesystemAdapter(
