@@ -34,7 +34,7 @@ watch(() => page.url, () => { sidebarOpen.value = false; });
 
 <template>
     <div class="app-shell">
-        <Head :title="`${heading[0]} | Relief Tracker`" />
+        <Head :title="`${heading[0]} | Relief Inventory Tracker`" />
         <AdminSidebar :open="sidebarOpen" @close="sidebarOpen = false" />
         <button v-if="sidebarOpen" class="sidebar-backdrop" type="button" aria-label="Close navigation" @click="sidebarOpen = false" />
         <main class="content">

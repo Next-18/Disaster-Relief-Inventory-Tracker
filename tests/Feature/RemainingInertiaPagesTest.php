@@ -125,7 +125,7 @@ class RemainingInertiaPagesTest extends TestCase
         $this->from(route('admin.settings'))
             ->withHeader('X-Inertia', 'true')
             ->post(route('admin.settings'), [
-                'site_name' => 'ReliefTrack',
+                'site_name' => 'Custom Relief Portal',
                 'site_description' => 'Local relief operations',
                 'contact_email' => 'help@example.test',
                 'contact_phone' => '09170000000',
@@ -136,7 +136,7 @@ class RemainingInertiaPagesTest extends TestCase
             ->assertRedirect(route('admin.settings'))
             ->assertSessionHas('success', 'Settings updated successfully.');
 
-        $this->assertSame('ReliefTrack', Setting::where('key', 'site_name')->value('value'));
+        $this->assertSame('Custom Relief Portal', Setting::where('key', 'site_name')->value('value'));
         $this->assertSame('San Isidro', Setting::where('key', 'barangay_name')->value('value'));
     }
 

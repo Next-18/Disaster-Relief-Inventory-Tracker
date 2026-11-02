@@ -1,6 +1,6 @@
-# ReliefTrack
+# Relief Inventory Tracker
 
-ReliefTrack is a disaster relief inventory tracker for managing beneficiaries, relief packages, inventory, deliveries, distributions, QR check-in, and staff announcements. The repository contains the Laravel web application and API. The beneficiary mobile app source is maintained separately, so update and verify its API integration in that app's repository.
+Relief Inventory Tracker manages beneficiaries, relief packages, inventory, deliveries, distributions, QR check-in, and staff announcements. The repository contains the Laravel web application and API. The beneficiary mobile app source is maintained separately, so update and verify its API integration in that app's repository.
 
 ## Requirements
 

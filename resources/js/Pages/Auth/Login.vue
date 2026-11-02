@@ -15,12 +15,12 @@ function submit() {
 </script>
 
 <template>
-    <Head title="Admin / Staff Login | ReliefTrack" />
+    <Head title="Admin / Staff Login | Relief Inventory Tracker" />
     <div class="login-page">
         <main class="page">
-        <section class="shell" aria-label="Disaster relief inventory tracker login">
+        <section class="shell" aria-label="Relief Inventory Tracker login">
             <aside class="brand-panel">
-                <div class="brand"><img :src="routes.logo" alt="Disaster Relief Inventory Tracker" class="logo-image"><span>Disaster Relief<br>Inventory Tracker</span></div>
+                <div class="brand"><img :src="routes.logo" alt="" class="logo-image"><span>Relief Inventory<br>Tracker</span></div>
                 <div class="brand-copy"><h1>Barangay operations portal.</h1><p>This portal is only for authorized Barangay Admin and Relief Staff. They can manage inventory, beneficiary records, and relief distribution.</p></div>
                 <div class="secure"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Secure access for authorized personnel</div>
             </aside>

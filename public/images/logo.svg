@@ -10,9 +10,9 @@
     <line x1="26" y1="55" x2="34" y2="55" stroke="#ffffff" stroke-width="2"/>
   </g>
   
-  <!-- Text: Disaster Relief - white for contrast on blue background -->
-  <text x="65" y="32" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="-0.02">Disaster Relief</text>
+  <!-- Text: Relief Inventory -->
+  <text x="65" y="32" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800" fill="#123a68" letter-spacing="-0.02">Relief Inventory</text>
   
-  <!-- Text: Inventory Tracker - lighter white for contrast -->
-  <text x="65" y="54" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="600" fill="#e3f1ff" letter-spacing="-0.01">Inventory Tracker</text>
+  <!-- Text: Tracker -->
+  <text x="65" y="54" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="600" fill="#1765b8" letter-spacing="-0.01">Tracker</text>
 </svg>

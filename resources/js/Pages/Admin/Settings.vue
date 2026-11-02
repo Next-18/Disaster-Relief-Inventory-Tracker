@@ -45,7 +45,7 @@ function updatePassword() {
 </script>
 
 <template>
-    <section class="module-heading"><div><h2>Settings</h2><p>Configure relief tracker preferences and access.</p></div></section>
+    <section class="module-heading"><div><h2>Settings</h2><p>Configure inventory tracker preferences and access.</p></div></section>
     <form class="settings-form" @submit.prevent="saveSettings">
         <section class="panel record-panel">
             <div class="panel-heading"><div><h3>General Settings</h3><p>Basic site configuration and contact information</p></div></div>

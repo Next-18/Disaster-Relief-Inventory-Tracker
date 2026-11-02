@@ -242,7 +242,7 @@ class AuthController extends Controller
             'distribution' => ['Distribution', '▣', 'Record and monitor relief distributions.'],
             'reports' => ['Reports', '📊', 'Review relief distribution and inventory reports.'],
             'audit-logs' => ['Audit Logs', '▤', 'View activity recorded across the admin portal.'],
-            'settings' => ['Settings', '⚙', 'Configure relief tracker preferences and access.'],
+            'settings' => ['Settings', '⚙', 'Configure inventory tracker preferences and access.'],
         ];
 
         abort_unless(isset($modules[$module]), 404);

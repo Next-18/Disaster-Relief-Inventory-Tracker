@@ -1467,7 +1467,7 @@ protected function generateUniqueQrToken(): string
             ]);
 
             // Save general settings
-            Setting::set('site_name', $request->site_name, 'string', 'general', 'Name of the relief tracker site');
+            Setting::set('site_name', $request->site_name, 'string', 'general', 'Name of the inventory tracker site');
             Setting::set('site_description', $request->site_description, 'string', 'general', 'Site description');
             Setting::set('contact_email', $request->contact_email, 'string', 'general', 'Contact email address');
             Setting::set('contact_phone', $request->contact_phone, 'string', 'general', 'Contact phone number');
@@ -1483,8 +1483,8 @@ protected function generateUniqueQrToken(): string
 
         // Get current settings
         $settings = [
-            'site_name' => Setting::get('site_name', 'Disaster Relief Inventory Tracker'),
-            'site_description' => Setting::get('site_description', 'Track and manage disaster relief operations'),
+            'site_name' => Setting::get('site_name', 'Relief Inventory Tracker'),
+            'site_description' => Setting::get('site_description', 'Track and manage relief operations'),
             'contact_email' => Setting::get('contact_email'),
             'contact_phone' => Setting::get('contact_phone'),
             'barangay_name' => Setting::get('barangay_name', 'Barangay Name'),
@@ -1498,8 +1498,8 @@ protected function generateUniqueQrToken(): string
     private function initializeDefaultSettings()
     {
         $defaults = [
-            ['site_name', 'Disaster Relief Inventory Tracker', 'string', 'general', 'Name of the relief tracker site'],
-            ['site_description', 'Track and manage disaster relief operations', 'string', 'general', 'Site description'],
+            ['site_name', 'Relief Inventory Tracker', 'string', 'general', 'Name of the inventory tracker site'],
+            ['site_description', 'Track and manage relief operations', 'string', 'general', 'Site description'],
             ['barangay_name', 'Barangay Name', 'string', 'location', 'Barangay name'],
             ['municipality', 'Municipality', 'string', 'location', 'Municipality name'],
             ['province', 'Province', 'string', 'location', 'Province name'],

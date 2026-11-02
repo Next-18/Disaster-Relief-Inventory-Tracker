@@ -55,7 +55,7 @@ const isActive = (href) => Boolean(href) && currentPath.value === new URL(href, 
     <aside class="sidebar" :class="{ 'sidebar-open': open }" aria-label="Admin navigation">
         <Link :href="homeRoute" class="brand" @click="emit('close')">
             <img :src="routes.logo" alt="" class="brand-logo">
-            <span>Disaster Relief<br>Inventory Tracker</span>
+            <span>Relief Inventory<br>Tracker</span>
         </Link>
 
         <nav class="sidebar-groups" aria-label="Main navigation">
