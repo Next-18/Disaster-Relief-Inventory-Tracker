@@ -25,7 +25,7 @@ class DistributionStockService
 
         if ($package->status !== 'Available') {
             throw ValidationException::withMessages([
-                'package_id' => 'This package template is currently paused.',
+                'package_id' => 'This package template is paused or unavailable for distribution.',
             ]);
         }
         $recipe = $package->inventoryItems()->orderBy('inventory_items.id')->get();

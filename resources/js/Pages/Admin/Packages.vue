@@ -133,7 +133,7 @@ async function deletePackage(item) {
                         <td><span v-if="item.inventory_items?.length">{{ item.inventory_items.map((part) => `${part.pivot.quantity_per_package} ${part.unit} ${part.item_name}`).join(', ') }}</span><span v-else class="tag warning">Recipe needed</span></td>
                         <td>{{ item.description || '—' }}</td>
                         <td><b>{{ item.available_quantity ?? 0 }}</b> packs</td>
-                        <td><span class="tag" :class="item.status === 'Available' ? 'success' : 'warning'">{{ item.status === 'Available' ? 'Active template' : 'Paused' }}</span></td>
+                        <td><span class="tag" :class="item.status === 'Available' ? 'success' : 'warning'">{{ item.status === 'Available' ? 'Active template' : item.status === 'Unavailable' ? 'Unavailable' : 'Paused' }}</span></td>
                         <td><div class="inventory-row-actions"><button class="action-btn" type="button" @click="openEditModal(item)">Edit</button><button class="action-btn delete" type="button" :disabled="form.processing" @click="deletePackage(item)">Delete</button></div></td>
                     </tr>
                     <tr v-if="!rows.length"><td colspan="6" class="empty-cell">{{ filters.search ? 'No packages match this search.' : 'No relief packages yet.' }}</td></tr>
@@ -163,7 +163,7 @@ async function deletePackage(item) {
                 <small v-if="form.errors.items" class="field-error">{{ form.errors.items }}</small>
                 <button type="button" class="action-btn recipe-add" @click="addIngredient">+ Add supply</button>
             </fieldset>
-            <label>Template status<select v-model="form.status" required><option value="Available">Active</option><option value="Not Available">Paused</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
+            <label>Template status<select v-model="form.status" required><option value="Available">Active</option><option value="Not Available">Paused</option><option value="Unavailable">Unavailable</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
             <div class="modal-actions"><button class="cancel-button" type="button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update package' : 'Save package' }}</button></div>
         </form>
     </AdminModal>
