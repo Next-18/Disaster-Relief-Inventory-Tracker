@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | Beneficiary name and beneficiary number | Identify and verify recipients; connect distribution history | Confirm the minimum identifiers needed at each screen and export. |
 | Contact number and address | Contact or locate a beneficiary | Confirm whether both fields are needed, who may view them, and when to remove or correct them. |
+| Sitio/Purok | Locate a beneficiary within the barangay for service delivery | Collect only the location detail needed for distribution; review staff access and retention with the privacy officer. |
 | Household size | Plan household assistance and check-in | Confirm the purpose and restrict access to roles that need it. |
 | Priority category (Regular, Senior Citizen, PWD, Solo Parent) | Filter eligibility and target assistance | The privacy officer should assess whether any category reveals sensitive personal information and approve its use and access. |
 | QR image, QR token, and beneficiary number encoded in legacy QR files | Identify a beneficiary at check-in | Treat QR values as credentials. Issue replacements if a QR may have been exposed; keep generated files in private storage. |

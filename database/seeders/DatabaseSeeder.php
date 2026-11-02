@@ -52,6 +52,7 @@ class DatabaseSeeder extends Seeder
                 'full_name' => 'Maria Reyes',
                 'contact_number' => '0917 555 1024',
                 'address' => 'Purok 2, San Juan',
+                'purok' => 'Purok 2',
                 'household_size' => 5,
                 'priority_type' => 'Senior Citizen',
             ]
@@ -63,6 +64,7 @@ class DatabaseSeeder extends Seeder
                 'full_name' => 'Juan Dela Cruz',
                 'contact_number' => '0918 222 0981',
                 'address' => 'Purok 4, San Juan',
+                'purok' => 'Purok 4',
                 'household_size' => 4,
                 'priority_type' => 'Regular',
             ]
@@ -74,6 +76,7 @@ class DatabaseSeeder extends Seeder
                 'full_name' => 'Angela Santos',
                 'contact_number' => '0917 333 1153',
                 'address' => 'Purok1, San Juan',
+                'purok' => 'Purok 1',
                 'household_size' => 3,
                 'priority_type' => 'PWD',
             ]

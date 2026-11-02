@@ -123,8 +123,6 @@ EXPOSE 10000
 # 1. Configure Apache port
 # 2. Discover Laravel packages
 # 3. Cache Laravel configuration
-# 4. Run pending migrations
-# 5. Seed production administrator
-# 6. Start Apache
+# 4. Start Apache
 
-CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; php artisan migrate --force; php artisan db:seed --class='Database\\Seeders\\AdminOnlySeeder' --force; exec apache2-foreground"]
+CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; exec apache2-foreground"]

@@ -49,16 +49,28 @@ This project is currently configured for local development. Do not copy the loca
    - `FILESYSTEM_DISK=local`
    - All required `QR_STORAGE_*` variables listed above
 3. Let Render build the Dockerfile. It installs production Composer dependencies and builds the Vue/Vite assets. Do not configure a separate manual Composer or npm build command for this Docker deployment.
-4. Keep the database migration and administrator seeding steps separate from the web service startup command.
+4. The container startup command only prepares Laravel and starts Apache. It does not migrate or seed the database. Configure `php artisan migrate --force` as a Render pre-deploy command when that feature is available. Otherwise, run it as a controlled one-off command against the production database after taking a backup and before sending traffic to code that requires the new schema.
 
 ### Database and initial administrator
 
-5. Before migrating, back up the production database and inspect its existing schema and migration history. Run `php artisan migrate --force` only after confirming that applying the pending migrations is safe.
-6. For the initial administrator, set a unique `ADMIN_SEED_PASSWORD` of at least 12 characters in Render's environment settings. Then run:
+5. Before migrating, back up the production database and inspect its existing schema and migration history. Review each pending migration for compatibility before running `php artisan migrate --force`.
+6. For the initial administrator only, set a unique `ADMIN_SEED_PASSWORD` of at least 12 characters in Render's environment settings. Then run:
 
    `php artisan db:seed --class="Database\Seeders\AdminOnlySeeder" --force`
 
-   The dedicated seeder creates the administrator only if the account does not already exist. Remove the temporary setup credential from Render after initial access is established.
+   The dedicated seeder creates the administrator only if the account does not already exist. It does not reset an existing admin password. Remove the setup credential from Render after initial access is established. Do not run the demonstration `DatabaseSeeder` against production.
+
+### Barangay staging pilot
+
+Before loading real beneficiary records, create a separate Render staging web service and a separate staging database. Configure staging with `APP_ENV=staging`, `APP_DEBUG=false`, its own `APP_KEY`, its own database credentials, its staging `APP_URL`, secure cookies, and a unique `ADMIN_SEED_PASSWORD`. Use a separate private QR storage bucket for staging so sample QR images cannot mix with production credentials.
+
+Run migrations against staging, then seed only that staging database with sample records:
+
+`php artisan db:seed --force`
+
+Because staging is not production, `DatabaseSeeder` creates the local demo administrator and demonstration data. Never point this command at the production database. Use the staging pilot to confirm that the optional Sitio/Purok field is usable, the one-released-package-per-beneficiary-per-local-day rule matches barangay policy, and delivery, reservation, check-in, cancellation, exports, and audit history work for staff roles.
+
+The current claim rule is enforced in `DistributionStockService`: a beneficiary may have only one released claim on a local calendar date. The service also prevents duplicate assignments of the same package to the same beneficiary for that date. Keep this rule for the pilot only if the barangay approves it; a per-event policy would require a separate event/assistance-round identifier and a code change.
 
 ### Scheduler
 
@@ -77,5 +89,6 @@ This project is currently configured for local development. Do not copy the loca
 - Verify administrator, staff, volunteer, and beneficiary access with separate accounts; confirm volunteers see only the minimum beneficiary details needed for check-in.
 - Verify mobile login throttling, token expiry, logout, password change, and token revocation.
 - Verify delivery receiving, stock reservation, release, and audit history using a staging database first.
+- Confirm that the barangay has approved the claim rule and that the pilot site has working internet for online QR verification and check-in.
 - Confirm error pages do not expose stack traces, logs are access-controlled, and the `/up` health endpoint is monitored.
-- Complete a dependency vulnerability review and a privacy review before importing real beneficiary data.
+- Complete and obtain privacy officer approval for the formal PIA, privacy notice, and retention schedule before importing real beneficiary data.

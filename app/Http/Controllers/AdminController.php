@@ -45,6 +45,7 @@ class AdminController extends Controller
                 $q->where('full_name', 'like', "%{$search}%")
                   ->orWhere('beneficiary_no', 'like', "%{$search}%")
                   ->orWhere('address', 'like', "%{$search}%")
+                  ->orWhere('purok', 'like', "%{$search}%")
                   ->orWhere('contact_number', 'like', "%{$search}%")
                   ->orWhere('priority_type', 'like', "%{$search}%")
                   ->orWhere('status', 'like', "%{$search}%");
@@ -110,6 +111,7 @@ class AdminController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'contact_number' => ['nullable', 'string', 'regex:/^\+639\d{9}$/'],
             'address' => ['nullable', 'string', 'max:255'],
+            'purok' => ['nullable', 'string', 'max:100'],
             'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
             'priority_type' => ['required', 'in:Regular,Senior Citizen,PWD,Solo Parent'],
             'status' => ['required', 'in:Active,Inactive'],
@@ -296,7 +298,7 @@ class AdminController extends Controller
             $handle = fopen('php://output', 'w');
 
             // Add CSV headers
-            fputcsv($handle, ['Beneficiary No', 'Full Name', 'Contact Number', 'Address', 'Household Size', 'Priority Type', 'Status', 'Created At']);
+            fputcsv($handle, ['Beneficiary No', 'Full Name', 'Contact Number', 'Address', 'Sitio/Purok', 'Household Size', 'Priority Type', 'Status', 'Created At']);
 
             // Add data rows
             foreach ($beneficiaries as $beneficiary) {
@@ -305,6 +307,7 @@ class AdminController extends Controller
                     $beneficiary->full_name,
                     $beneficiary->contact_number ?? '',
                     $beneficiary->address ?? '',
+                    $beneficiary->purok ?? '',
                     $beneficiary->household_size ?? '',
                     $beneficiary->priority_type,
                     $beneficiary->status,
@@ -558,12 +561,13 @@ class AdminController extends Controller
                     ->orWhere('beneficiary_no', 'like', $like)
                     ->orWhere('contact_number', 'like', $like)
                     ->orWhere('address', 'like', $like)
+                    ->orWhere('purok', 'like', $like)
                     ->orWhere('priority_type', 'like', $like)
                     ->orWhere('status', 'like', $like);
             })
             ->orderBy('full_name')
             ->limit(8)
-            ->get(['id', 'beneficiary_no', 'full_name', 'address', 'status', 'priority_type']);
+            ->get(['id', 'beneficiary_no', 'full_name', 'address', 'purok', 'status', 'priority_type']);
 
         $inventoryItems = InventoryItem::query()
             ->where(function ($query) use ($like) {
@@ -799,7 +803,7 @@ class AdminController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $beneficiary->only(['id', 'full_name', 'beneficiary_no', 'household_size', 'priority_type', 'status']) + [
+            'data' => $beneficiary->only(['id', 'full_name', 'beneficiary_no', 'purok', 'household_size', 'priority_type', 'status']) + [
                 'pending_distributions' => $pendingDistributions,
                 'released_today' => $releasedToday,
             ],
@@ -1347,7 +1351,7 @@ protected function generateUniqueQrToken(): string
         return response()->streamDownload(function () use ($query): void {
             $output = fopen('php://output', 'w');
             fwrite($output, "\xEF\xBB\xBF");
-            fputcsv($output, ['Distribution ID', 'Date Released', 'Beneficiary Number', 'Beneficiary', 'Relief Package', 'Status', 'Recorded By', 'Notes'], ',', '"', '');
+            fputcsv($output, ['Distribution ID', 'Date Released', 'Beneficiary Number', 'Beneficiary', 'Sitio/Purok', 'Relief Package', 'Status', 'Recorded By', 'Notes'], ',', '"', '');
 
             $query->with(['beneficiary', 'reliefPackage', 'distributor'])
                 ->orderByDesc('date_released')
@@ -1359,6 +1363,7 @@ protected function generateUniqueQrToken(): string
                             $distribution->date_released?->format('Y-m-d'),
                             $distribution->beneficiary?->beneficiary_no ?? '',
                             $distribution->beneficiary?->full_name ?? 'Unknown beneficiary',
+                            $distribution->beneficiary?->purok ?? '',
                             $distribution->reliefPackage?->package_name ?? 'Unknown package',
                             $distribution->status,
                             $distribution->distributor?->name ?? '',

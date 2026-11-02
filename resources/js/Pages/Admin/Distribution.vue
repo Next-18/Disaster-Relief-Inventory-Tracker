@@ -320,6 +320,7 @@ function formatDate(value) {
         <div v-if="scannedBeneficiary" class="beneficiary-check-details">
             <p><strong>Name</strong><span>{{ scannedBeneficiary.full_name }}</span></p>
             <p><strong>Beneficiary number</strong><span>{{ scannedBeneficiary.beneficiary_no }}</span></p>
+            <p v-if="scannedBeneficiary.purok"><strong>Sitio/Purok</strong><span>{{ scannedBeneficiary.purok }}</span></p>
             <p><strong>Household size</strong><span>{{ scannedBeneficiary.household_size ?? 'Not recorded' }}</span></p>
             <p><strong>Priority</strong><span>{{ scannedBeneficiary.priority_type ?? 'Regular' }}</span></p>
             <p><strong>Status</strong><span>{{ scannedBeneficiary.status }}</span></p>

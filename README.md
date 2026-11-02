@@ -24,7 +24,7 @@ For local demonstration data, review `DatabaseSeeder` before running `php artisa
 
 - **Admin:** manage users, beneficiaries, inventory, packages, deliveries, distributions, QR codes, and announcements.
 - **Staff and volunteers:** use authorized staff views and QR check-in workflows for distribution handoff.
-- **Beneficiary API:** mobile clients authenticate through the API and retrieve account, package, distribution, and notification information. Keep the mobile client's API base URL, response handling, and cached account details aligned with the API resources in this repository.
+- **Beneficiary API:** mobile clients authenticate through the API and retrieve account, package, distribution, and notification information. Beneficiary resources include an optional Sitio/Purok value where the signed-in role is allowed to see it. Keep the mobile client's API base URL, response handling, and cached account details aligned with the API resources in this repository.
 - **Announcements:** admins and staff can publish from the staff portal. Authenticated mobile clients can fetch published announcements with `GET /api/announcements`; the response contains `data` items with `id`, `title`, `body`, `author`, and ISO-8601 `published_at` fields (up to the latest 50).
 - **Distribution windows:** pending assignments reserve stock. A pending assignment past its deadline is cancelled by the scheduled expiry command, reserved stock is restored, and the beneficiary is notified. A distribution is not confirmed as picked up until staff complete the QR check-in flow.
 - **QR replacement:** reporting a QR as lost and replacing it revokes the prior QR credential. Treat exported QR images as private beneficiary credentials.
@@ -40,6 +40,8 @@ wscript.exe "<project path>\scripts\run-laravel-scheduler.vbs" "<full path to ph
 Production servers should use their process manager or cron instead; for cron, run `php /absolute/path/to/project/artisan schedule:run` once per minute. See [DEPLOYMENT.md](DEPLOYMENT.md) for the release checklist. Check `php artisan schedule:list` to confirm the overdue distribution command appears every minute.
 
 ## Development and release workflow
+
+Use [PILOT_GUIDE.md](PILOT_GUIDE.md) for the barangay staging pilot and its one-claim-per-day acceptance check. Use [DEPLOYMENT.md](DEPLOYMENT.md) for controlled Render migrations and production release steps.
 
 - Make changes on a reviewed branch and inspect `git status` and `git diff` before committing.
 - Keep `.env`, database exports, logs, and beneficiary QR images out of public source control.
