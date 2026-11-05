@@ -79,7 +79,8 @@ class HandleInertiaRequests extends Middleware
                 'loginAttempt' => route('login.attempt'),
                 'register' => route('register'),
                 'registerAttempt' => route('register.attempt'),
-                'logo' => asset('images/logo.png'),
+                'logo' => asset('images/logo.svg'),
+                'logoIcon' => asset('images/logo-icon.svg'),
             ],
         ];
     }
