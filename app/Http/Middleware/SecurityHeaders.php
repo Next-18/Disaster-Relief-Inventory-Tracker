@@ -23,14 +23,16 @@ class SecurityHeaders
             // Leave includeSubDomains out until every subdomain is confirmed HTTPS.
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000');
 
-            // Start in report-only mode to identify assets or integrations that
-            // need to be added before enforcing a policy that could block them.
-            $response->headers->set(
-                'Content-Security-Policy-Report-Only',
-                "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; "
+            // Keep this policy aligned with the app's Vite assets, SweetAlert CDN,
+            // storage images, and QR scanner camera preview.
+            $contentSecurityPolicy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; "
                 ."script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; "
                 ."img-src 'self' data: blob: https:; font-src 'self' data: https:; "
-                ."connect-src 'self' https: ws: wss:; worker-src 'self' blob:"
+                ."connect-src 'self' https: ws: wss:; worker-src 'self' blob:";
+
+            $response->headers->set(
+                'Content-Security-Policy',
+                $contentSecurityPolicy
             );
         }
 
