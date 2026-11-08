@@ -14,6 +14,12 @@ class NotificationController extends Controller
 
         $query = BeneficiaryNotification::query()
             ->where('user_id', $request->user()->id)
+            ->where(function ($notifications) {
+                $notifications->whereNull('distribution_id')
+                    ->orWhereHas('distribution', function ($distribution) {
+                        $distribution->where('status', '!=', 'Released');
+                    });
+            })
             ->latest();
 
         return response()->json([
