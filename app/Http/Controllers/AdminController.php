@@ -461,10 +461,15 @@ class AdminController extends Controller
         ];
     }
 
-    protected function validatedInventoryData(Request $request): array
+    protected function validatedInventoryData(Request $request, bool $creating = false): array
     {
-        $data = $request->validate($this->inventoryValidationRules());
-        $data['quantity'] = (int) $data['quantity'];
+        $rules = $this->inventoryValidationRules();
+        if ($creating) {
+            unset($rules['quantity']);
+        }
+
+        $data = $request->validate($rules);
+        $data['quantity'] = $creating ? 0 : (int) $data['quantity'];
         $data['minimum_stock'] = (int) $data['minimum_stock'];
         $data['status'] = $data['quantity'] <= $data['minimum_stock'] ? 'Low Stock' : 'In Stock';
 
@@ -473,7 +478,7 @@ class AdminController extends Controller
 
     public function storeInventory(Request $request)
     {
-        $data = $this->validatedInventoryData($request);
+        $data = $this->validatedInventoryData($request, creating: true);
         $item = InventoryItem::create($data);
         $this->logAudit('create', 'inventory', "Added inventory item: {$item->item_name} (Qty: {$item->quantity} {$item->unit})");
         return redirect()->route('admin.inventory')->with('success', 'Inventory item added successfully.');

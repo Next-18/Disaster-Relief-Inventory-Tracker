@@ -181,11 +181,12 @@ function formatDate(value) {
     </section>
 
     <AdminModal v-if="canManageInventory" ref="modal" class="form-modal" @click.self="modal?.close()">
-        <div class="modal-title"><div><h3>{{ editingId ? 'Edit inventory item' : 'Add inventory item' }}</h3><p>{{ editingId ? 'Update inventory item information.' : 'Enter a supply item and its stock level.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="modal?.close()">×</button></div>
+        <div class="modal-title"><div><h3>{{ editingId ? 'Edit inventory item' : 'Add inventory item' }}</h3><p>{{ editingId ? 'Update inventory item information.' : 'Add a supply item. Record deliveries to add stock.' }}</p></div><button type="button" class="modal-close" aria-label="Close" @click="modal?.close()">×</button></div>
         <form @submit.prevent="saveItem">
             <label>Item name<input v-model="form.item_name" maxlength="255" placeholder="e.g. Rice" required :class="{ 'input-error': form.errors.item_name }"><small v-if="form.errors.item_name" class="field-error">{{ form.errors.item_name }}</small></label>
             <label>Category<select :value="selectedCategory" required @change="chooseCategory($event.target.value)"><option value="" disabled>Choose a category</option><option v-for="category in categoryOptions" :key="category" :value="category">{{ category }}</option><option value="__other__">Other (enter category)</option></select><input v-if="selectedCategory === '__other__'" v-model="form.category" maxlength="60" placeholder="Enter a new category" required><small v-if="form.errors.category" class="field-error">{{ form.errors.category }}</small></label>
-            <div class="form-row"><label>Quantity<input v-model.number="form.quantity" type="number" min="0" max="4294967295" step="1" required><small v-if="form.errors.quantity" class="field-error">{{ form.errors.quantity }}</small></label><label>Unit<input v-model="form.unit" maxlength="30" placeholder="e.g. bags" required><small v-if="form.errors.unit" class="field-error">{{ form.errors.unit }}</small></label></div>
+            <div class="form-row" :class="{ 'form-row-single': !editingId }"><label v-if="editingId">Quantity<input v-model.number="form.quantity" type="number" min="0" max="4294967295" step="1" required><small v-if="form.errors.quantity" class="field-error">{{ form.errors.quantity }}</small></label><label>Unit<input v-model="form.unit" maxlength="30" placeholder="e.g. bags" required><small v-if="form.errors.unit" class="field-error">{{ form.errors.unit }}</small></label></div>
+            <p v-if="!editingId" class="form-hint">New inventory items start at 0. Record a delivery to add received quantities to stock.</p>
             <label>Minimum stock level<input v-model.number="form.minimum_stock" type="number" min="0" max="4294967295" step="1" required><small v-if="form.errors.minimum_stock" class="field-error">{{ form.errors.minimum_stock }}</small></label>
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update item' : 'Save item' }}</button></div>
         </form>
@@ -201,3 +202,16 @@ function formatDate(value) {
         </form>
     </AdminModal>
 </template>
+
+<style scoped>
+.form-row-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.form-hint {
+    margin: -4px 0 0;
+    color: #52647b;
+    font-size: 12px;
+    line-height: 1.5;
+}
+</style>
