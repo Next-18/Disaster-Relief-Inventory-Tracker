@@ -18,7 +18,7 @@ const headings = {
     'Admin/Search': ['Search results', 'ADMIN PORTAL / SEARCH'],
     'Admin/Packages': ['Relief Packages', 'ADMIN PORTAL / PACKAGES'],
     'Admin/QrCodes': ['QR Codes', 'ADMIN PORTAL / QR CODES'],
-    'Admin/LostQr': ['Lost QR', 'ADMIN PORTAL / LOST QR'],
+    'Admin/LostQr': ['QR Codes', 'ADMIN PORTAL / QR CODES'],
     'Admin/Reports': ['Reports', 'ADMIN PORTAL / REPORTS'],
     'Admin/AuditLogs': ['Audit Logs', 'ADMIN PORTAL / AUDIT LOGS'],
     'Admin/Settings': ['Settings', 'ADMIN PORTAL / SETTINGS'],

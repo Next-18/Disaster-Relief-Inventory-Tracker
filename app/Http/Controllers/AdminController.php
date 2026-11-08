@@ -1056,7 +1056,7 @@ protected function generateUniqueQrToken(): string
         $newBeneficiaryNo = $this->generateNextBeneficiaryNumber();
         $successMessage = $this->issueQRCode($beneficiary, $newBeneficiaryNo);
 
-        return redirect()->route('admin.lost-qr')->with('success', $successMessage);
+        return redirect()->route('admin.qr-codes', ['tab' => 'lost'])->with('success', $successMessage);
     }
 
     private function issueQRCode(Beneficiary $beneficiary, ?string $newBeneficiaryNo = null): string
@@ -1174,7 +1174,7 @@ protected function generateUniqueQrToken(): string
         $beneficiary->qr_code = null;
         $beneficiary->qr_revoked = true;
         $beneficiary->save();
-        return redirect()->route('admin.lost-qr')->with('success', 'QR code marked as lost. A new one can be generated.');
+        return redirect()->route('admin.qr-codes', ['tab' => 'lost'])->with('success', 'QR code marked as lost. A new one can be generated.');
     }
 
     public function regenerateQRCode($id)
@@ -1487,8 +1487,8 @@ protected function generateUniqueQrToken(): string
             'site_description' => Setting::get('site_description', 'Track and manage relief operations'),
             'contact_email' => Setting::get('contact_email'),
             'contact_phone' => Setting::get('contact_phone'),
-            'barangay_name' => Setting::get('barangay_name', 'Barangay Name'),
-            'municipality' => Setting::get('municipality', 'Municipality'),
+            'barangay_name' => Setting::get('barangay_name', 'Barangay San Juan'),
+            'municipality' => Setting::get('municipality', 'Surigao City'),
             'province' => Setting::get('province', 'Province'),
         ];
 
@@ -1500,8 +1500,8 @@ protected function generateUniqueQrToken(): string
         $defaults = [
             ['site_name', 'Relief Inventory Tracker', 'string', 'general', 'Name of the inventory tracker site'],
             ['site_description', 'Track and manage relief operations', 'string', 'general', 'Site description'],
-            ['barangay_name', 'Barangay Name', 'string', 'location', 'Barangay name'],
-            ['municipality', 'Municipality', 'string', 'location', 'Municipality name'],
+            ['barangay_name', 'Barangay San Juan', 'string', 'location', 'Barangay name'],
+            ['municipality', 'Surigao City', 'string', 'location', 'Municipality name'],
             ['province', 'Province', 'string', 'location', 'Province name'],
         ];
 

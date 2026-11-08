@@ -16,7 +16,6 @@ const allLinks = [
     { label: 'Deliveries', href: routes.value.deliveries, icon: 'delivery' },
     { label: 'Packages', href: routes.value.packages, icon: 'package' },
     { label: 'QR Codes', href: routes.value.qrCodes, icon: 'qr' },
-    { label: 'Lost QR', href: routes.value.lostQr, icon: 'lost' },
     { label: 'Distribution', href: routes.value.distribution, icon: 'distribution' },
     { label: 'Support', href: routes.value.support, icon: 'support' },
     { label: 'Announcements', href: routes.value.announcements, icon: 'announcement' },
@@ -29,7 +28,8 @@ const groups = computed(() => {
     if (user.value.role === 'admin') {
         return [
             { label: 'Overview', links: allLinks.filter((link) => link.label === 'Dashboard') },
-            { label: 'Relief Operations', links: allLinks.filter((link) => ['Beneficiaries', 'Deliveries', 'Inventory', 'Packages', 'Distribution', 'QR Codes', 'Lost QR'].includes(link.label)) },
+            { label: 'Beneficiaries & Inventory', links: allLinks.filter((link) => ['Beneficiaries', 'Inventory', 'QR Codes'].includes(link.label)) },
+            { label: 'Supply & Distribution', links: allLinks.filter((link) => ['Deliveries', 'Packages', 'Distribution'].includes(link.label)) },
             { label: 'Monitoring', links: allLinks.filter((link) => ['Reports', 'Support', 'Announcements'].includes(link.label)) },
             { label: 'Administration', links: allLinks.filter((link) => ['Users', 'Audit Logs', 'Settings'].includes(link.label)) },
         ];
@@ -92,9 +92,5 @@ const isActive = (href) => Boolean(href) && currentPath.value === new URL(href, 
             </section>
         </nav>
 
-        <div class="profile-box">
-            <div class="profile-initial">{{ (user.name || 'A').slice(0, 1).toUpperCase() }}</div>
-            <div><strong>{{ user.name || 'Administrator' }}</strong><small>{{ user.role || 'Administrator' }}</small></div>
-        </div>
     </aside>
 </template>

@@ -3,6 +3,7 @@ import { router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import AdminModal from '../../Components/AdminModal.vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
+import { appConfirm } from '../../composables/useAppDialog';
 
 defineOptions({ layout: AdminLayout });
 
@@ -20,11 +21,20 @@ const viewedBeneficiary = ref(null);
 let searchTimer;
 let lastSearch = filters.search.trim();
 const rows = computed(() => props.beneficiaries ?? []);
+const activeTab = ref(new URLSearchParams(window.location.search).get('tab') === 'lost' ? 'lost' : 'codes');
 
 function visitSearch(replace = false) {
     lastSearch = filters.search.trim();
     clearTimeout(searchTimer);
-    router.get(routes.value.qrCodes, { search: lastSearch || undefined }, { preserveState: true, preserveScroll: true, replace });
+    router.get(routes.value.qrCodes, { search: lastSearch || undefined, tab: activeTab.value === 'lost' ? 'lost' : undefined }, { preserveState: true, preserveScroll: true, replace });
+}
+
+function selectTab(tab) {
+    activeTab.value = tab;
+    router.get(routes.value.qrCodes, {
+        search: filters.search.trim() || undefined,
+        tab: tab === 'lost' ? 'lost' : undefined,
+    }, { preserveState: true, preserveScroll: true, replace: true });
 }
 
 watch(() => filters.search, () => {
@@ -37,6 +47,10 @@ watch(() => props.filters, (next) => {
     filters.search = next.search ?? '';
     lastSearch = filters.search.trim();
 }, { deep: true });
+
+watch(() => page.url, (url) => {
+    activeTab.value = new URLSearchParams(url.split('?')[1] ?? '').get('tab') === 'lost' ? 'lost' : 'codes';
+});
 
 onBeforeUnmount(() => clearTimeout(searchTimer));
 
@@ -53,12 +67,30 @@ function runAction(id, action, url) {
     activeRequest.value = id;
     router.post(url, {}, { preserveScroll: true, onFinish: () => { activeRequest.value = null; } });
 }
+
+async function reportLost(beneficiary) {
+    const confirmed = await appConfirm(`Report the QR code for ${beneficiary.full_name} as lost?`, {
+        title: 'Report QR code as lost?',
+        confirmLabel: 'Report lost',
+    });
+    if (!confirmed) return;
+    runAction(beneficiary.id, 'lost', routes.value.lostQrReport.replace('__ID__', encodeURIComponent(beneficiary.id)));
+}
+
+function generateNew(beneficiary) {
+    runAction(beneficiary.id, 'generate-new', routes.value.lostQrGenerate.replace('__ID__', encodeURIComponent(beneficiary.id)));
+}
 </script>
 
 <template>
-    <section class="module-heading"><div><h2>QR codes</h2><p>Generate and manage beneficiary QR codes.</p></div></section>
+    <section class="module-heading"><div><h2>QR code management</h2><p>View beneficiary QR codes, report lost codes, and issue replacements.</p></div></section>
 
-    <section class="panel record-panel">
+    <div class="qr-tabs" role="tablist" aria-label="QR code sections">
+        <button type="button" role="tab" :aria-selected="activeTab === 'codes'" :class="{ active: activeTab === 'codes' }" @click="selectTab('codes')">QR Codes</button>
+        <button type="button" role="tab" :aria-selected="activeTab === 'lost'" :class="{ active: activeTab === 'lost' }" @click="selectTab('lost')">Lost QR</button>
+    </div>
+
+    <section v-if="activeTab === 'codes'" class="panel record-panel" role="tabpanel">
         <div class="panel-heading">
             <div><h3>Beneficiary QR codes</h3><p>{{ rows.length }} active beneficiaries</p></div>
             <form class="module-search-form" role="search" @submit.prevent="visitSearch()">
@@ -85,6 +117,28 @@ function runAction(id, action, url) {
         </table></div>
     </section>
 
+    <section v-else class="panel record-panel" role="tabpanel">
+        <div class="panel-heading">
+            <div><h3>Report or replace a lost QR code</h3><p>Active QR codes can be reported lost; lost or missing codes can be replaced.</p></div>
+            <label class="sr-only" for="lost-qr-search">Search beneficiaries</label>
+            <input id="lost-qr-search" v-model="filters.search" class="table-search" type="search" placeholder="Search beneficiaries" aria-label="Search beneficiaries">
+        </div>
+        <div class="table-wrap"><table class="record-table">
+            <thead><tr><th>BENEFICIARY</th><th>QR CODE STATUS</th><th>ACTIONS</th></tr></thead>
+            <tbody>
+                <tr v-for="beneficiary in rows" :key="beneficiary.id">
+                    <td><b>{{ beneficiary.full_name }}</b><small>{{ beneficiary.beneficiary_no }}</small></td>
+                    <td><span class="tag" :class="beneficiary.qr_code ? 'success' : 'warning'">{{ beneficiary.qr_code ? 'Active' : 'Lost/Not Generated' }}</span></td>
+                    <td>
+                        <button v-if="beneficiary.qr_code" class="action-btn delete" type="button" :disabled="activeRequest === beneficiary.id" @click="reportLost(beneficiary)">{{ activeRequest === beneficiary.id ? 'Updating…' : 'Report Lost' }}</button>
+                        <button v-else class="action-btn" type="button" :disabled="activeRequest === beneficiary.id" @click="generateNew(beneficiary)">{{ activeRequest === beneficiary.id ? 'Generating…' : 'Generate New' }}</button>
+                    </td>
+                </tr>
+                <tr v-if="!rows.length"><td colspan="3" class="empty-cell">{{ filters.search ? 'No beneficiaries match this search.' : 'No beneficiaries found.' }}</td></tr>
+            </tbody>
+        </table></div>
+    </section>
+
     <AdminModal ref="modal" class="form-modal qr-modal" @click.self="modal?.close()">
         <div class="modal-title qr-modal-title">
             <div class="qr-modal-heading">
@@ -103,6 +157,10 @@ function runAction(id, action, url) {
 </template>
 
 <style scoped>
+.qr-tabs { display: flex; gap: 8px; margin: 0 0 16px; border-bottom: 1px solid #e5eaf0; }
+.qr-tabs button { padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #64748b; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.qr-tabs button.active { border-bottom-color: #2563eb; color: #1d4ed8; }
+.qr-tabs button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .text-muted { color: #94a3b8; }
 .form-modal.qr-modal { width: min(430px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid #e5eaf0; border-radius: 16px; box-shadow: 0 24px 64px rgba(15, 35, 60, .2); }
 .qr-modal .qr-modal-title { align-items: flex-start; padding: 20px 23px 17px; }

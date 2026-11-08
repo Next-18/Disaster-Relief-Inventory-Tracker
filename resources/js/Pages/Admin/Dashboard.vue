@@ -64,7 +64,7 @@ function initials(name) {
 <template>
     <section class="welcome">
         <div>
-            <h2>Welcome, {{ $page.props.auth?.user?.name?.split(' ')[0] || 'Administrator' }}</h2>
+            <h2>Welcome, Barangay Administrator</h2>
             <p>Inventory and distribution overview for <strong>{{ location }}</strong>.</p>
         </div>
         <button class="add-button" type="button" @click="openDistributionModal"><span>+</span> Record Distribution</button>
