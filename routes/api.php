@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DistributionController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PackageController;
+use App\Http\Controllers\Api\SupportTicketController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -35,6 +36,8 @@ Route::post('/auth/change-password', [AuthController::class, 'changePassword'])-
 Route::get('/notifications', [NotificationController::class, 'index'])->middleware('auth:sanctum');
 Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])->middleware('auth:sanctum');
 Route::get('/announcements', [AnnouncementController::class, 'index'])->middleware('auth:sanctum');
+Route::get('/support/tickets', [SupportTicketController::class, 'index'])->middleware('auth:sanctum');
+Route::post('/support/tickets', [SupportTicketController::class, 'store'])->middleware(['auth:sanctum', 'throttle:5,1']);
 
 // Dashboard routes
 Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->middleware('auth:sanctum');
