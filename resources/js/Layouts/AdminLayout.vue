@@ -11,8 +11,8 @@ const headings = {
     'Admin/Dashboard': ['Dashboard', 'ADMIN PORTAL / OVERVIEW'],
     'Admin/Beneficiaries': ['Beneficiaries', 'ADMIN PORTAL / RECORDS'],
     'Admin/Inventory': ['Inventory', 'ADMIN PORTAL / STOCK CONTROL'],
-    'Admin/Deliveries': ['Stock deliveries', 'ADMIN PORTAL / RECEIVING'],
-    'Admin/Support': ['Support', 'ADMIN PORTAL / ISSUE REPORTS'],
+    'Admin/Deliveries': ['Deliveries', 'ADMIN PORTAL / DELIVERIES'],
+    'Admin/Support': ['Support', 'ADMIN PORTAL / SUPPORT'],
     'Admin/Announcements': ['Announcements', 'ADMIN PORTAL / STAFF UPDATES'],
     'Admin/Distribution': ['Distribution', 'ADMIN PORTAL / RELIEF DISTRIBUTION'],
     'Admin/Search': ['Search results', 'ADMIN PORTAL / SEARCH'],
@@ -22,6 +22,7 @@ const headings = {
     'Admin/Reports': ['Reports', 'ADMIN PORTAL / REPORTS'],
     'Admin/AuditLogs': ['Audit Logs', 'ADMIN PORTAL / AUDIT LOGS'],
     'Admin/Settings': ['Settings', 'ADMIN PORTAL / SETTINGS'],
+    'Admin/Users': ['Users', 'ADMIN PORTAL / USERS'],
     'Admin/Module': ['Admin Portal', 'ADMIN PORTAL'],
 };
 const heading = computed(() => headings[page.component] ?? ['Admin Portal', 'ADMIN PORTAL']);

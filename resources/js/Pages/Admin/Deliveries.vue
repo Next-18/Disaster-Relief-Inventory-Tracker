@@ -67,7 +67,7 @@ function formatDate(value) {
 
 <template>
     <section class="module-heading">
-        <div><h2>Stock deliveries</h2><p>Record supplies received from DSWD or another source, including damaged goods.</p></div>
+        <div><h2>Deliveries</h2><p>Record supplies received from DSWD or another source, including damaged goods.</p></div>
         <button class="add-button" type="button" :disabled="!inventoryItems.length" @click="openModal"><span>+</span> Record delivery</button>
     </section>
 

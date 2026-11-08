@@ -337,8 +337,10 @@ body {
 .panel-heading { display: flex; justify-content: space-between; align-items: flex-start; padding: 22px 23px 18px; }
 .panel h3 { margin: 0; color: var(--admin-ink); font-size: 16px; }
 .panel-heading p { margin: 6px 0 0; color: #5f6f84; font-size: 12px; }
-.primary-action { border: 1px solid #cbd5e1; border-radius: 8px; padding: 13px 17px; background: #ffffff; color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
-.primary-action:hover { background: #f8fafc; border-color: #94a3b8; }
+.primary-action { border: 1px solid #2563eb; border-radius: 8px; padding: 13px 17px; background: #2563eb; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .2s ease, border-color .2s ease, box-shadow .2s ease; }
+.primary-action:hover { background: #1d4ed8; border-color: #1d4ed8; }
+.primary-action:focus-visible, .add-button:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 2px; }
+.primary-action:disabled, .add-button:disabled { cursor: not-allowed; opacity: .65; }
 
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
@@ -390,7 +392,7 @@ td { padding: 14px 23px; border-top: 1px solid #edf2f7; color: #52647e; font-siz
 .inventory-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .inventory-row-actions .action-btn { padding: 6px 9px; }
 .inventory-row-low td { background: #fffdfa; }
-.add-button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; background: #ffffff; color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }.add-button span { font-size: 16px; font-weight: 400; line-height: 1; }.add-button:hover { background: #f8fafc; border-color: #94a3b8; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); transform: translateY(-1px); }
+.add-button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #2563eb; border-radius: 8px; padding: 10px 16px; background: #2563eb; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .2s ease, border-color .2s ease, box-shadow .2s ease; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }.add-button span { font-size: 16px; font-weight: 400; line-height: 1; }.add-button:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12); }
 .action-btn { border: 1px solid var(--admin-line); border-radius: 6px; padding: 6px 12px; background: #ffffff; color: #52647e; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
 .action-btn:hover { background: #f1f4f7; border-color: #9eb8d7; color: #29496f; }
 .action-btn.delete { color: #a96d18; border-color: #f5e6d3; }
@@ -619,7 +621,7 @@ td { padding: 14px 23px; border-top: 1px solid #edf2f7; color: #52647e; font-siz
     .topbar-search { width: clamp(170px, 20vw, 230px); }
     .user-details { max-width: 180px; }
 }
-@media (max-width: 1000px) and (min-width: 761px) {
+@media (max-width: 1100px) and (min-width: 761px) {
     .topbar { height: auto; min-height: 82px; flex-wrap: wrap; padding: 13px 0; }
     .topbar-heading { flex: 1 1 100%; }
     .top-actions { width: 100%; flex: 1 1 100%; justify-content: flex-end; }
@@ -960,6 +962,16 @@ button.inventory-summary-card:focus-visible { outline: 3px solid #93c5fd; outlin
 .form-modal .phone-input > span { padding-left: 10px; color: #5b6d84; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .form-modal .phone-input input { min-width: 0; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
 .form-modal .phone-input input:focus { border: 0; box-shadow: none; }
+
+/* Keep wide tables inside their cards instead of expanding the page shell. */
+.app-shell { width: 100%; min-width: 0; }
+.content { min-width: 0; max-width: 100%; }
+.table-wrap { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.record-panel, .settings-form, .settings-fields, .settings-grid, .report-section, .report-chart-grid, .reports-heading { min-width: 0; }
+@media (max-width: 1100px) and (min-width: 761px) {
+    .reports-heading { align-items: flex-start; flex-direction: column; }
+    .report-actions { width: 100%; }
+}
 
 .app-dialog-backdrop { position: fixed; inset: 0; z-index: 20000; display: grid; place-items: center; padding: 20px; background: rgba(15, 27, 44, .50); backdrop-filter: blur(3px); }
 .app-dialog { width: min(440px, 100%); padding: 25px; border: 1px solid #e5eaf1; border-radius: 16px; outline: none; background: #fff; box-shadow: 0 24px 70px rgba(15, 27, 44, .25); animation: app-dialog-enter .18s ease-out; }
