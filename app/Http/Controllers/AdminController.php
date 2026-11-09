@@ -215,7 +215,16 @@ class AdminController extends Controller
             }
         }
 
-        $beneficiary->update($data);
+        DB::transaction(function () use ($beneficiary, $data) {
+            $beneficiary->update($data);
+
+            $linkedUser = $beneficiary->user;
+            if ($linkedUser) {
+                $linkedUser->name = $beneficiary->full_name;
+                $linkedUser->save();
+            }
+        });
+
         $this->logAudit('update', 'beneficiaries', "Updated beneficiary: {$beneficiary->full_name} ({$beneficiary->beneficiary_no})");
         return redirect()->back()->with('success', 'Beneficiary updated successfully.');
     }
@@ -1584,6 +1593,42 @@ protected function generateUniqueQrToken(): string
     public function updateUser(Request $request, $id)
     {
         $user = User::findOrFail($id);
+
+        if ($user->role === 'user') {
+            $data = $request->validate([
+                'name' => ['required', 'string', 'max:255'],
+                'username' => ['required', 'string', 'max:100', Rule::unique('users', 'username')->ignore($user->id)],
+                'password' => ['nullable', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
+                'status' => ['required', 'in:Active,Inactive'],
+            ]);
+
+            $beneficiary = $user->beneficiary;
+            if (! $beneficiary) {
+                return back()->withErrors(['name' => 'This beneficiary account is not linked to a beneficiary record.']);
+            }
+
+            if (Beneficiary::where('full_name', $data['name'])->where('id', '!=', $beneficiary->id)->exists()) {
+                return back()->withInput()->withErrors(['name' => 'A beneficiary with this name already exists.']);
+            }
+
+            DB::transaction(function () use ($user, $beneficiary, $data) {
+                $beneficiary->full_name = $data['name'];
+                $beneficiary->status = $data['status'];
+                $beneficiary->save();
+
+                $user->name = $data['name'];
+                $user->username = $data['username'];
+                if (! empty($data['password'])) {
+                    $user->password = bcrypt($data['password']);
+                    $user->password_changed = true;
+                }
+                $user->save();
+            });
+
+            $this->logAudit('update', 'users', "Updated beneficiary account for: {$beneficiary->full_name}");
+
+            return redirect()->route('admin.users')->with('success', 'Beneficiary account updated successfully.');
+        }
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],

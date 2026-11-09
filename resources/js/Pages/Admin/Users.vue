@@ -17,10 +17,12 @@ const routes = computed(() => page.props.routeUrls ?? {});
 const form = useForm({
     name: '',
     email: '',
+    username: '',
     password: '',
     password_confirmation: '',
     beneficiary_id: '',
     role: 'staff',
+    status: 'Active',
 });
 
 const editingId = ref(null);
@@ -37,8 +39,10 @@ function createUser() {
 function editUser(user) {
     editingId.value = user.id;
     form.name = user.name;
-    form.email = user.email;
+    form.email = user.email ?? '';
+    form.username = user.username ?? '';
     form.role = user.role;
+    form.status = user.beneficiary?.status ?? 'Active';
     form.beneficiary_id = user.beneficiary_id ?? '';
     form.password = '';
     form.password_confirmation = '';
@@ -136,7 +140,7 @@ function openCreateModal() {
                             <span v-else style="color: #94a3b8;">No beneficiary linked</span>
                         </td>
                         <td>
-                            <span class="tag success">Active</span>
+                            <span :class="['tag', user.role === 'user' && user.beneficiary?.status === 'Inactive' ? 'warning' : 'success']">{{ user.role === 'user' ? (user.beneficiary?.status ?? 'Unknown') : 'Active' }}</span>
                         </td>
                         <td>
                             <button type="button" @click="editUser(user)" class="action-btn">Edit</button>
@@ -162,17 +166,21 @@ function openCreateModal() {
 
     <dialog class="form-modal" id="user-modal">
         <div class="modal-title">
-            <h3>{{ editingId ? 'Edit user account' : 'Add team account' }}</h3>
-            <p>{{ editingId ? 'Update account information and role.' : 'Staff can release packages. Volunteers can scan and verify beneficiaries.' }}</p>
+            <h3>{{ editingId ? (form.role === 'user' ? 'Edit beneficiary account' : 'Edit team account') : 'Add team account' }}</h3>
+            <p>{{ editingId && form.role === 'user' ? 'Update the beneficiary profile and linked login account.' : editingId ? 'Update account information and role.' : 'Staff can release packages. Volunteers can scan and verify beneficiaries.' }}</p>
         </div>
         <form @submit.prevent="editingId ? updateUser() : createUser()">
             <label>Full name
                 <input v-model="form.name" type="text" required placeholder="Enter full name" :class="{ 'input-error': form.errors.name }">
                 <small v-if="form.errors.name" class="field-error">{{ form.errors.name }}</small>
             </label>
-            <label>Email address
+            <label v-if="form.role !== 'user'">Email address
                 <input v-model="form.email" type="email" required placeholder="Enter email address" :class="{ 'input-error': form.errors.email }">
                 <small v-if="form.errors.email" class="field-error">{{ form.errors.email }}</small>
+            </label>
+            <label v-if="form.role === 'user'">Username
+                <input v-model="form.username" type="text" maxlength="100" required autocomplete="username" placeholder="Enter username" :class="{ 'input-error': form.errors.username }">
+                <small v-if="form.errors.username" class="field-error">{{ form.errors.username }}</small>
             </label>
             <label>Password
                 <input 
@@ -194,7 +202,7 @@ function openCreateModal() {
                     :class="{ 'input-error': form.errors.password }"
                 >
             </label>
-            <label>Role
+            <label v-if="form.role !== 'user'">Role
                 <select v-model="form.role" required :class="{ 'input-error': form.errors.role }">
                     <option value="admin">Administrator</option>
                     <option value="staff">Staff — release packages and record distributions</option>
@@ -202,6 +210,13 @@ function openCreateModal() {
                     <option v-if="editingId && form.role === 'user'" value="user">Beneficiary</option>
                 </select>
                 <small v-if="form.errors.role" class="field-error">{{ form.errors.role }}</small>
+            </label>
+            <label v-if="form.role === 'user'">Status
+                <select v-model="form.status" required :class="{ 'input-error': form.errors.status }">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                </select>
+                <small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small>
             </label>
             <div class="modal-actions">
                 <button type="button" class="cancel-button" @click="closeModal">Cancel</button>
