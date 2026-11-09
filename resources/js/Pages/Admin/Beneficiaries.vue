@@ -273,9 +273,9 @@ function saveBeneficiary() {
     }
 
     const householdSize = String(form.household_size).trim();
-    if (householdSize && !/^(?:0|[1-9]\d?)$/.test(householdSize)) {
-        form.setError('household_size', 'Household size must be a whole number from 0 to 99.');
-        showFormAlert('Household size must be a whole number from 0 to 99.');
+    if (householdSize && !/^(?:[1-9]|[1-9]\d)$/.test(householdSize)) {
+        form.setError('household_size', 'Household size must be a whole number from 1 to 99.');
+        showFormAlert('Household size must be a whole number from 1 to 99.');
         return;
     }
 
@@ -531,7 +531,7 @@ function priorityClass(priority) {
             <small v-if="form.errors.full_name" class="field-error">{{ form.errors.full_name }}</small>
             <label>Contact number<div class="phone-input"><span aria-hidden="true">+63</span><input v-model="form.contact_number" type="tel" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="9xxxxxxxxx" @input="sanitizePhoneInput" :class="{ 'input-error': form.errors.contact_number }"></div><small v-if="form.errors.contact_number" class="field-error">{{ form.errors.contact_number }}</small></label>
             <label>Address<input v-model="form.address" maxlength="255" placeholder="Enter complete address"><small v-if="form.errors.address" class="field-error">{{ form.errors.address }}</small></label>
-            <div class="form-row"><label>Household size<input v-model="form.household_size" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="0–99 members" @input="sanitizeHouseholdSize" :class="{ 'input-error': form.errors.household_size }"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
+            <div class="form-row"><label>Household size<input v-model="form.household_size" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="1–99 members" @input="sanitizeHouseholdSize" :class="{ 'input-error': form.errors.household_size }"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
             <label>Status<select v-model="form.status" required><option>Active</option><option>Inactive</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
 
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="beneficiaryModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update beneficiary' : 'Save beneficiary' }}</button></div>

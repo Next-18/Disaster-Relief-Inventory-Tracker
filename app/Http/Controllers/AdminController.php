@@ -110,7 +110,7 @@ class AdminController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'contact_number' => ['nullable', 'string', 'regex:/^\+639\d{9}$/'],
             'address' => ['nullable', 'string', 'max:255'],
-            'household_size' => ['nullable', 'integer', 'min:0', 'max:99'],
+            'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
             'priority_type' => ['required', 'in:Regular,Senior Citizen,PWD,Solo Parent'],
             'status' => ['required', 'in:Active,Inactive'],
         ];
