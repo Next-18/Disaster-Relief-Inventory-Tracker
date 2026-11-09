@@ -23,7 +23,6 @@ class BeneficiaryResource extends JsonResource
             'full_name' => $this->full_name,
             'contact_number' => $this->when($isAdmin || $isOwner, $this->contact_number),
             'address' => $this->when($isAdmin || $isOwner, $this->address),
-            'purok' => $this->when($isAdmin || $isOwner || $isStaff, $this->purok),
             'household_size' => $this->when($isAdmin || $isOwner || $isStaff, $this->household_size),
             'priority_type' => $this->when($isAdmin || $isOwner || $isStaff, $this->priority_type),
             'status' => $this->status,
