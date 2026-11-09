@@ -20,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([ExpireOverdueDistributions::class])
     ->withMiddleware(function (Middleware $middleware): void {
+        // Render's proxy addresses can change; trust only the immediate proxy hop
+        // and use its forwarded headers to resolve the original client IP.
+        $middleware->trustProxies(at: env('TRUSTED_PROXIES', '*'));
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
             'distribution-operator' => EnsureUserCanRecordDistributions::class,

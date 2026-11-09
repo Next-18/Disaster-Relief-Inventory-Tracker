@@ -60,8 +60,26 @@ function saveDelivery() {
 
 function formatDate(value) {
     if (!value) return '—';
-    const date = new Date(`${value}T00:00:00`);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const datePart = String(value).slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (!match) return value;
+    const [, year, month, day] = match.map(Number);
+    return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function formatRecordedAt(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+}
+
+function displaySource(source) {
+    return /^dswd$/i.test(source ?? '') ? 'DSWD' : source;
+}
+
+function unitLabel(quantity, unit) {
+    const label = unit || 'unit';
+    return Number(quantity) === 1 ? label.replace(/s$/i, '') : label;
 }
 </script>
 
@@ -85,7 +103,7 @@ function formatDate(value) {
         <div class="delivery-list">
             <article v-for="delivery in rows" :key="delivery.id" class="delivery-card">
                 <header class="delivery-card-header">
-                    <div><h4>{{ delivery.source }}</h4><p>Received {{ formatDate(delivery.delivery_date) }}<span v-if="delivery.reference_number"> · Ref {{ delivery.reference_number }}</span></p></div>
+                    <div><h4>{{ displaySource(delivery.source) }}</h4><p>Received {{ formatDate(delivery.delivery_date) }}<span v-if="formatRecordedAt(delivery.created_at)"> · {{ formatRecordedAt(delivery.created_at) }}</span><span v-if="delivery.reference_number"> · Ref {{ delivery.reference_number }}</span></p></div>
                     <span class="delivery-receiver">Recorded by {{ delivery.receiver?.name ?? 'Former user' }}</span>
                 </header>
                 <div class="delivery-items">
@@ -118,7 +136,7 @@ function formatDate(value) {
             <div v-for="(line, index) in form.items" :key="index" class="delivery-form-line">
                 <label>Inventory item<select v-model.number="line.inventory_item_id" required><option value="" disabled>Select an item</option><option v-for="item in inventoryItems" :key="item.id" :value="item.id" :disabled="selectedIds.includes(item.id) && Number(line.inventory_item_id) !== item.id">{{ item.item_name }} ({{ item.unit }})</option></select><small v-if="form.errors[`items.${index}.inventory_item_id`]" class="field-error">{{ form.errors[`items.${index}.inventory_item_id`] }}</small></label>
                 <div class="form-row"><label>Qty received<input v-model.number="line.quantity_received" type="number" min="1" step="1" required><small v-if="form.errors[`items.${index}.quantity_received`]" class="field-error">{{ form.errors[`items.${index}.quantity_received`] }}</small></label><label>Damaged<input v-model.number="line.quantity_damaged" type="number" min="0" :max="line.quantity_received" step="1" required><small v-if="form.errors[`items.${index}.quantity_damaged`]" class="field-error">{{ form.errors[`items.${index}.quantity_damaged`] }}</small></label></div>
-                <p class="delivery-usable-preview">{{ acceptedTotal(line) }} usable {{ inventoryItems.find((item) => Number(item.id) === Number(line.inventory_item_id))?.unit ?? 'units' }} will be added</p>
+                <p class="delivery-usable-preview">{{ acceptedTotal(line) }} usable {{ unitLabel(acceptedTotal(line), inventoryItems.find((item) => Number(item.id) === Number(line.inventory_item_id))?.unit ?? 'unit') }} will be added</p>
                 <label>Condition / discrepancy <span class="optional-label">Optional</span><input v-model="line.condition_note" maxlength="500" placeholder="e.g. 2 sacks torn; 1 box wet"></label>
                 <button v-if="form.items.length > 1" type="button" class="delivery-remove" @click="removeLine(index)">Remove item</button>
             </div>

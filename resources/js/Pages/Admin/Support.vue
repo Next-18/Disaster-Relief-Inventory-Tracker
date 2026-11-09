@@ -49,7 +49,7 @@ function statusLabel(status) {
 
 <template>
     <section class="module-heading">
-        <div><h2>{{ isAdmin ? 'Support inbox' : 'Report a concern' }}</h2><p>{{ isAdmin ? 'Review reports from staff and volunteers and send them an update.' : 'Send a problem or concern to the administrator and follow its progress.' }}</p></div>
+        <div><h2>{{ isAdmin ? 'Support inbox' : 'Report a concern' }}</h2><p>{{ isAdmin ? 'Review requests.' : 'Send a problem or concern to the administrator and follow its progress.' }}</p></div>
     </section>
 
     <section v-if="!isAdmin" class="panel support-form-panel">

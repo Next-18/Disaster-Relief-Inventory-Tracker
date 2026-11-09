@@ -39,17 +39,17 @@ async function removeAnnouncement(announcement) {
     <section class="module-heading"><div><h2>Announcements</h2><p>Publish updates for the staff portal and beneficiary mobile app.</p></div></section>
 
     <section class="panel record-panel announcement-compose">
-        <div class="panel-heading"><div><h3>Write an announcement</h3><p>It will appear in the staff portal and the mobile app announcements feed.</p></div></div>
+        <div class="panel-heading"><div><h3>Write an announcement</h3><p></p></div></div>
         <form class="announcement-form" @submit.prevent="publish">
             <label>Title
                 <input v-model="form.title" maxlength="150" required placeholder="e.g. Distribution schedule update">
                 <small v-if="form.errors.title" class="field-error">{{ form.errors.title }}</small>
             </label>
             <label>Message
-                <textarea v-model="form.body" maxlength="5000" rows="5" required placeholder="Write the details staff need to know."></textarea>
+                <textarea v-model="form.body" maxlength="5000" rows="5" required placeholder="Write a message."></textarea>
                 <small v-if="form.errors.body" class="field-error">{{ form.errors.body }}</small>
             </label>
-            <div class="announcement-actions"><span>Visible to staff, volunteers, and beneficiaries</span><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Publishing…' : 'Publish announcement' }}</button></div>
+            <div class="announcement-actions"><span></span><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Publishing…' : 'Publish announcement' }}</button></div>
         </form>
     </section>
 

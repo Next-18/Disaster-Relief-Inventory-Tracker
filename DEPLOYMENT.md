@@ -38,6 +38,7 @@ This project is currently configured for local development. Do not copy the loca
    - `APP_DEBUG=false`
    - `APP_KEY` with a production-only generated key
    - `APP_URL` with the Render HTTPS URL
+   - `TRUSTED_PROXIES=*` so Laravel resolves visitor IPs from Render's forwarded headers (Laravel trusts the immediate proxy hop)
    - `DB_CONNECTION=pgsql`
    - `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_SSLMODE=require` using the Supabase connection details
    - `SESSION_DRIVER=database`
