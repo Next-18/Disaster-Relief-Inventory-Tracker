@@ -273,9 +273,9 @@ function saveBeneficiary() {
     }
 
     const householdSize = String(form.household_size).trim();
-    if (householdSize && !/^(?:[1-9]|[1-9]\d)$/.test(householdSize)) {
-        form.setError('household_size', 'Household size must be a whole number from 1 to 99.');
-        showFormAlert('Household size must be a whole number from 1 to 99.');
+    if (householdSize && !/^(?:0|[1-9]\d?)$/.test(householdSize)) {
+        form.setError('household_size', 'Household size must be a whole number from 0 to 99.');
+        showFormAlert('Household size must be a whole number from 0 to 99.');
         return;
     }
 
@@ -495,7 +495,7 @@ function priorityClass(priority) {
                     <tr v-for="beneficiary in rows" :key="beneficiary.id" class="beneficiary-row" :class="{ selected: selectedIds.includes(beneficiary.id) }">
                         <td><button type="button" class="beneficiary-name-btn view-beneficiary-btn" @click="showDetails(beneficiary)"><div class="beneficiary-cell"><div class="avatar" :class="`a${(beneficiary.id % 4) + 1}`">{{ beneficiary.full_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() }}</div><div><b>{{ beneficiary.full_name }}</b><small>{{ beneficiary.beneficiary_no }} — {{ beneficiary.address || 'No address listed' }}</small></div></div></button></td>
                         <td>{{ beneficiary.contact_number || '—' }}</td>
-                        <td>{{ beneficiary.household_size || '—' }} members</td>
+                        <td>{{ beneficiary.household_size ?? '—' }} members</td>
                         <td><span class="tag" :class="priorityClass(beneficiary.priority_type)">{{ beneficiary.priority_type }}</span></td>
                         <td><span class="tag" :class="beneficiary.status === 'Active' ? 'success' : 'warning'">{{ beneficiary.status }}</span></td>
                         <td class="actions-cell"><div class="row-actions-dropdown">
@@ -531,7 +531,7 @@ function priorityClass(priority) {
             <small v-if="form.errors.full_name" class="field-error">{{ form.errors.full_name }}</small>
             <label>Contact number<div class="phone-input"><span aria-hidden="true">+63</span><input v-model="form.contact_number" type="tel" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="9xxxxxxxxx" @input="sanitizePhoneInput" :class="{ 'input-error': form.errors.contact_number }"></div><small v-if="form.errors.contact_number" class="field-error">{{ form.errors.contact_number }}</small></label>
             <label>Address<input v-model="form.address" maxlength="255" placeholder="Enter complete address"><small v-if="form.errors.address" class="field-error">{{ form.errors.address }}</small></label>
-            <div class="form-row"><label>Household size<input v-model="form.household_size" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="1–99 members" @input="sanitizeHouseholdSize" :class="{ 'input-error': form.errors.household_size }"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
+            <div class="form-row"><label>Household size<input v-model="form.household_size" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="0–99 members" @input="sanitizeHouseholdSize" :class="{ 'input-error': form.errors.household_size }"><small v-if="form.errors.household_size" class="field-error">{{ form.errors.household_size }}</small></label><label>Priority<select v-model="form.priority_type" required><option>Regular</option><option>Senior Citizen</option><option>PWD</option><option>Solo Parent</option></select><small v-if="form.errors.priority_type" class="field-error">{{ form.errors.priority_type }}</small></label></div>
             <label>Status<select v-model="form.status" required><option>Active</option><option>Inactive</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
 
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="beneficiaryModal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update beneficiary' : 'Save beneficiary' }}</button></div>
@@ -552,7 +552,7 @@ function priorityClass(priority) {
         <div v-if="viewedBeneficiary" class="detail-modal-body">
             <div class="detail-row"><span>Contact number</span><strong>{{ viewedBeneficiary.contact_number || 'Not provided' }}</strong></div>
             <div class="detail-row detail-row-wide"><span>Address</span><strong>{{ viewedBeneficiary.address || 'No address listed' }}</strong></div>
-            <div class="detail-row"><span>Household size</span><strong>{{ viewedBeneficiary.household_size ? `${viewedBeneficiary.household_size} members` : 'Not provided' }}</strong></div>
+            <div class="detail-row"><span>Household size</span><strong>{{ viewedBeneficiary.household_size != null && viewedBeneficiary.household_size !== '' ? `${viewedBeneficiary.household_size} members` : 'Not provided' }}</strong></div>
             <div class="detail-row"><span>Priority</span><strong><span class="tag" :class="priorityClass(viewedBeneficiary.priority_type)">{{ viewedBeneficiary.priority_type || 'Regular' }}</span></strong></div>
             <div class="detail-row"><span>Registered</span><strong>{{ formatDate(viewedBeneficiary.created_at) }}</strong></div>
         </div>

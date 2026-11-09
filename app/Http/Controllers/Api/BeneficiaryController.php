@@ -97,7 +97,7 @@ class BeneficiaryController extends Controller
             'full_name' => ['sometimes', 'required', 'string', 'max:255'],
             'contact_number' => ['nullable', 'string', 'regex:/^\+639\d{9}$/'],
             'address' => ['nullable', 'string', 'max:255'],
-            'household_size' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'household_size' => ['nullable', 'integer', 'min:0', 'max:99'],
             'current_password' => ['nullable', 'required_with:new_password', 'string'],
             'new_password' => ['nullable', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
         ]);
