@@ -17,7 +17,7 @@ class AdminNotifications
             return collect();
         }
 
-        $canSeeOperations = $user->isAdmin() || $user->role === 'staff';
+        $canSeeOperations = $user->canManageBarangay() || $user->role === 'staff';
         $lowStock = $canSeeOperations ? InventoryItem::lowStock()
             ->orderBy('quantity')
             ->orderBy('item_name')
@@ -53,7 +53,7 @@ class AdminNotifications
                 ];
             }) : collect();
 
-        $newBeneficiaries = $user->isAdmin() ? Beneficiary::query()
+        $newBeneficiaries = $user->canManageBarangay() ? Beneficiary::query()
             ->where('created_at', '>=', now()->subDays(7))
             ->latest()
             ->limit(3)
@@ -67,7 +67,7 @@ class AdminNotifications
                 'url' => route('admin.beneficiaries', ['search' => $beneficiary->beneficiary_no]),
             ]) : collect();
 
-        $newSupportTickets = $user->isAdmin()
+        $newSupportTickets = $user->canManageBarangay()
             ? SupportTicket::query()
                 ->with('reporter:id,name')
                 ->whereIn('status', ['open', 'in_progress'])

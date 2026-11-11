@@ -44,6 +44,8 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    'trust_render_client_ip' => (bool) env('TRUST_RENDER_CLIENT_IP', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application URL

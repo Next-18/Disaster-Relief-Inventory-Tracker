@@ -214,9 +214,18 @@ function releasePendingDistribution(assignment) {
         return;
     }
     pendingReleaseError.value = '';
+    if (!pendingBeneficiary.value.offlineClaimId) {
+        const random = new Uint8Array(16);
+        crypto.getRandomValues(random);
+        random[6] = (random[6] & 0x0f) | 0x40;
+        random[8] = (random[8] & 0x3f) | 0x80;
+        const hex = [...random].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+        pendingBeneficiary.value.offlineClaimId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
     router.post(routes.value.distributionReleasePending, {
         beneficiary_no: pendingBeneficiary.value.qr_payload,
         distribution_id: assignment.id,
+        offline_claim_id: pendingBeneficiary.value.offlineClaimId,
     }, {
         preserveScroll: true,
         onSuccess: () => {

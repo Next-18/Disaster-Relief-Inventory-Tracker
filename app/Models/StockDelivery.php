@@ -5,10 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Concerns\BelongsToBarangay;
 
 class StockDelivery extends Model
 {
-    protected $fillable = ['source', 'reference_number', 'delivery_date', 'notes', 'received_by'];
+    use BelongsToBarangay;
+    protected $fillable = ['barangay_id', 'source', 'reference_number', 'delivery_date', 'notes', 'received_by'];
 
     protected function casts(): array
     {

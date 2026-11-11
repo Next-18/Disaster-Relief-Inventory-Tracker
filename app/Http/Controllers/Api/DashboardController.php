@@ -67,8 +67,8 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
-        $barangayName = Setting::get('barangay_name', 'Barangay');
-        $municipality = Setting::get('municipality', 'Municipality');
+        $barangayName = $user->barangay?->name ?? Setting::get('barangay_name', 'Barangay');
+        $municipality = $user->barangay?->municipality ?? Setting::get('municipality', 'Municipality');
         $location = "{$barangayName}, {$municipality}";
 
         return response()->json([

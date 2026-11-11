@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Support\AdminNotifications;
 use App\Models\Announcement;
+use App\Models\Barangay;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -18,18 +19,22 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => fn () => $request->user()?->only('id', 'name', 'email', 'role'),
             ],
+            'activeBarangayId' => fn () => $request->session()->get('active_barangay_id'),
+            'activeBarangayName' => fn () => $request->user()?->role === 'super_admin'
+                ? Barangay::query()->whereKey($request->session()->get('active_barangay_id'))->value('name')
+                : null,
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
                 'user_credentials' => fn () => $request->session()->get('user_credentials'),
             ],
             'notifications' => fn () => app(AdminNotifications::class)->for($request->user()),
-            'staffAnnouncements' => fn () => $request->user()?->canRecordDistributions()
-                && $request->user()?->role !== 'admin'
+            'staffAnnouncements' => fn () => in_array($request->user()?->role, ['staff', 'volunteer'], true)
                     ? Announcement::query()->where('is_published', true)->latest()->get(['id', 'title', 'body', 'created_at'])
                     : [],
             'routeUrls' => [
                 'dashboard' => route('dashboard'),
+                'barangays' => route('super-admin.barangays'),
                 'announcements' => route('admin.announcements'),
                 'announcementStore' => route('admin.announcements.store'),
                 'announcementDelete' => route('admin.announcements.destroy', ['announcement' => '__ID__']),
@@ -45,8 +50,10 @@ class HandleInertiaRequests extends Middleware
                 'deliveries' => route('admin.deliveries'),
                 'deliveryStore' => route('admin.deliveries.store'),
                 'support' => route('admin.support'),
+                'supportSuperAdmin' => route('super-admin.support'),
                 'supportStore' => route('admin.support.store'),
-                'supportUpdate' => route('admin.support.update', ['ticket' => '__ID__']),
+                'supportUpdateAdmin' => route('admin.support.update', ['ticket' => '__ID__']),
+                'supportUpdate' => route('super-admin.support.update', ['ticket' => '__ID__']),
                 'inventoryAdjustStock' => route('admin.inventory.adjust-stock', ['id' => '__ID__']),
                 'inventoryStore' => route('admin.inventory.store'),
                 'inventoryUpdate' => route('admin.inventory.update', ['id' => '__ID__']),
@@ -77,6 +84,9 @@ class HandleInertiaRequests extends Middleware
                 'logout' => route('logout'),
                 'login' => route('login'),
                 'loginAttempt' => route('login.attempt'),
+                'mfaChallenge' => route('mfa.challenge'),
+                'mfaVerify' => route('mfa.verify'),
+                'mfaDisable' => route('super-admin.mfa.disable'),
                 'register' => route('register'),
                 'registerAttempt' => route('register.attempt'),
                 'logo' => asset('images/relief-tracker-logo.jpg'),

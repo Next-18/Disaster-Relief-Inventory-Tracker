@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use App\Models\Beneficiary;
 use App\Models\InventoryItem;
+use App\Models\Barangay;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -26,10 +27,13 @@ class DatabaseSeeder extends Seeder
             return;
         }
 
+        $defaultBarangayId = Barangay::query()->oldest('id')->value('id');
+
         // Local development administrator.
         $admin = User::firstOrNew(['email' => 'admin@barangay.gov.ph']);
         $admin->name = 'Barangay Administrator';
-        $admin->role = 'admin';
+        $admin->role = 'super_admin';
+        $admin->barangay_id ??= $defaultBarangayId;
 
         if (! $admin->exists || Hash::check('password', $admin->password)) {
             $password = config('app.admin_seed_password');
@@ -50,6 +54,7 @@ class DatabaseSeeder extends Seeder
             ['beneficiary_no' => 'BEN-1024'],
             [
                 'full_name' => 'Maria Reyes',
+                'barangay_id' => $defaultBarangayId,
                 'contact_number' => '0917 555 1024',
                 'address' => 'Purok 2, San Juan',
                 'purok' => 'Purok 2',
@@ -62,6 +67,7 @@ class DatabaseSeeder extends Seeder
             ['beneficiary_no' => 'BEN-0981'],
             [
                 'full_name' => 'Juan Dela Cruz',
+                'barangay_id' => $defaultBarangayId,
                 'contact_number' => '0918 222 0981',
                 'address' => 'Purok 4, San Juan',
                 'purok' => 'Purok 4',
@@ -74,6 +80,7 @@ class DatabaseSeeder extends Seeder
             ['beneficiary_no' => 'BEN-1153'],
             [
                 'full_name' => 'Angela Santos',
+                'barangay_id' => $defaultBarangayId,
                 'contact_number' => '0917 333 1153',
                 'address' => 'Purok1, San Juan',
                 'purok' => 'Purok 1',
@@ -87,6 +94,7 @@ class DatabaseSeeder extends Seeder
             ['item_name' => 'Rice (5kg)'],
             [
                 'category' => 'Food Supplies',
+                'barangay_id' => $defaultBarangayId,
                 'quantity' => 12,
                 'unit' => 'bags',
                 'minimum_stock' => 20,
@@ -98,6 +106,7 @@ class DatabaseSeeder extends Seeder
             ['item_name' => 'Canned Goods'],
             [
                 'category' => 'Food Supplies',
+                'barangay_id' => $defaultBarangayId,
                 'quantity' => 24,
                 'unit' => 'units',
                 'minimum_stock' => 30,
@@ -109,6 +118,7 @@ class DatabaseSeeder extends Seeder
             ['item_name' => 'Bottled Water'],
             [
                 'category' => 'Drinking Water',
+                'barangay_id' => $defaultBarangayId,
                 'quantity' => 8,
                 'unit' => 'cases',
                 'minimum_stock' => 15,
@@ -120,6 +130,7 @@ class DatabaseSeeder extends Seeder
             ['item_name' => 'Hygiene Kits'],
             [
                 'category' => 'Hygiene',
+                'barangay_id' => $defaultBarangayId,
                 'quantity' => 96,
                 'unit' => 'kits',
                 'minimum_stock' => 25,

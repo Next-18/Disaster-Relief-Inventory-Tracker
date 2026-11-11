@@ -21,7 +21,7 @@ class AdminOnlySeeder extends Seeder
         $admin = User::query()->where('email', $email)->first();
 
         if ($admin) {
-            if ($admin->role !== 'admin') {
+            if (! in_array($admin->role, ['admin', 'super_admin'], true)) {
                 throw new \RuntimeException(
                     'The configured administrator email is already assigned to a non-admin account.'
                 );
@@ -35,7 +35,7 @@ class AdminOnlySeeder extends Seeder
             'name' => 'Barangay Administrator',
             'email' => $email,
             'password' => $password,
-            'role' => 'admin',
+            'role' => 'super_admin',
             'password_changed' => true,
         ]);
     }

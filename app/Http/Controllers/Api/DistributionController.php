@@ -125,41 +125,12 @@ class DistributionController extends Controller
         ]);
     }
 
-    public function record(Request $request, DistributionStockService $stock)
+    public function record()
     {
-        $validated = $request->validate([
-            'beneficiary_no' => 'required|string',
-            'package_id' => 'required|integer|exists:relief_packages,id',
-        ]);
-
-        $beneficiary = Beneficiary::where('beneficiary_no', $request->beneficiary_no)->where('status', 'Active')->first();
-
-        if (!$beneficiary) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Beneficiary not found',
-            ], 404);
-        }
-
-        $distribution = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
-            $distribution = Distribution::create([
-                'beneficiary_id' => $beneficiary->id,
-                'package_id' => $validated['package_id'],
-                'date_released' => now(),
-                'status' => 'Released',
-                'distributed_by' => $request->user()->id,
-            ]);
-            $stock->consumeFor($distribution);
-            return $distribution;
-        });
-
-        $distribution->load(['beneficiary', 'reliefPackage']);
-
         return response()->json([
-            'success' => true,
-            'message' => 'Distribution recorded successfully',
-            'data' => new DistributionResource($distribution),
-        ], 201);
+            'success' => false,
+            'message' => 'Direct release recording is disabled. Create a pending assignment, then confirm pickup by scanning its beneficiary QR code while online.',
+        ], 410);
     }
 
     public function releasePending(Request $request, DistributionStockService $stock)
@@ -167,6 +138,7 @@ class DistributionController extends Controller
         $validated = $request->validate([
             'beneficiary_no' => ['required', 'string', 'max:64'],
             'distribution_id' => ['required', 'integer', 'exists:distributions,id'],
+            'offline_claim_id' => ['nullable', 'uuid'],
         ]);
 
         $beneficiary = Beneficiary::query()
@@ -174,8 +146,27 @@ class DistributionController extends Controller
             ->where('status', 'Active')
             ->firstOrFail();
 
-        $distribution = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
+        [$distribution, $wasDuplicateRetry] = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
             Beneficiary::query()->lockForUpdate()->findOrFail($beneficiary->id);
+
+            if (! empty($validated['offline_claim_id'])) {
+                $existingClaim = Distribution::query()
+                    ->where('offline_claim_id', $validated['offline_claim_id'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existingClaim) {
+                    abort_unless(
+                        (int) $existingClaim->id === (int) $validated['distribution_id']
+                            && (int) $existingClaim->beneficiary_id === (int) $beneficiary->id,
+                        409,
+                        'This claim identifier has already been used for a different distribution.'
+                    );
+
+                    return [$existingClaim->load(['beneficiary', 'reliefPackage']), true];
+                }
+            }
+
             $distribution = Distribution::query()
                 ->whereKey($validated['distribution_id'])
                 ->where('beneficiary_id', $beneficiary->id)
@@ -197,20 +188,23 @@ class DistributionController extends Controller
                 'status' => 'Released',
                 'date_released' => now(),
                 'distributed_by' => $request->user()->id,
+                'offline_claim_id' => $validated['offline_claim_id'] ?? null,
             ]);
             $stock->consumeFor($distribution);
 
-            return $distribution->load(['beneficiary', 'reliefPackage']);
+            return [$distribution->load(['beneficiary', 'reliefPackage']), false];
         });
 
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'release',
-            'module' => 'distribution',
-            'description' => "Released {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name} via mobile API",
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
+        if (! $wasDuplicateRetry) {
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'action' => 'release',
+                'module' => 'distribution',
+                'description' => "Released {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name} via mobile API",
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+        }
 
         return response()->json([
             'success' => true,

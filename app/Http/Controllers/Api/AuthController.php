@@ -48,7 +48,7 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
-        if (!$user || (! $user->canRecordDistributions() && ($user->role !== 'user' || ! $user->beneficiary_id))) {
+        if (!$user || ! $user->canSignIn() || $user->role === 'super_admin' || (! $user->canRecordDistributions() && ($user->role !== 'user' || ! $user->beneficiary_id))) {
             Auth::logout();
             throw ValidationException::withMessages([
                 'beneficiary_no' => ['This account is not permitted to sign in through the mobile app.'],

@@ -71,6 +71,21 @@ async function deleteUser(id) {
     if (confirmed) router.delete(`${routes.value.users}/${id}`);
 }
 
+async function toggleUserStatus(user) {
+    const nextActive = !user.is_active;
+    const confirmed = await appConfirm(
+        nextActive
+            ? `Reactivate ${user.name}'s account? They will be able to sign in again.`
+            : `Deactivate ${user.name}'s account? They will be signed out and their mobile tokens revoked.`,
+        {
+            title: nextActive ? 'Reactivate account?' : 'Deactivate account?',
+            confirmLabel: nextActive ? 'Reactivate' : 'Deactivate',
+            danger: !nextActive,
+        },
+    );
+    if (confirmed) router.patch(`${routes.value.users}/${user.id}/status`, { is_active: nextActive });
+}
+
 function closeModal() {
     document.getElementById('user-modal').close();
     form.reset();
@@ -140,10 +155,12 @@ function openCreateModal() {
                             <span v-else style="color: #94a3b8;">No beneficiary linked</span>
                         </td>
                         <td>
-                            <span :class="['tag', user.role === 'user' && user.beneficiary?.status === 'Inactive' ? 'warning' : 'success']">{{ user.role === 'user' ? (user.beneficiary?.status ?? 'Unknown') : 'Active' }}</span>
+                            <span :class="['tag', user.is_active ? 'success' : 'warning']">{{ user.is_active ? 'Active' : 'Inactive' }}</span>
+                            <small v-if="user.role === 'user'">Beneficiary: {{ user.beneficiary?.status ?? 'Unknown' }}</small>
                         </td>
                         <td>
                             <button type="button" @click="editUser(user)" class="action-btn">Edit</button>
+                            <button v-if="user.id !== $page.props.auth.user.id" type="button" @click="toggleUserStatus(user)" class="action-btn">{{ user.is_active ? 'Deactivate' : 'Reactivate' }}</button>
                             <button 
                                 v-if="user.id !== $page.props.auth.user.id" 
                                 type="button" 

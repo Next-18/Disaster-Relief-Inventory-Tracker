@@ -19,7 +19,7 @@ class BeneficiaryController extends Controller
         $limit = (int) ($validated['limit'] ?? 100);
         $offset = (int) ($validated['offset'] ?? 0);
         $query = Beneficiary::query();
-        $isAdmin = $request->user()->isAdmin();
+        $isAdmin = $request->user()->canManageBarangay();
 
         if (! $request->user()->canReleasePackages()) {
             $query->whereKey($request->user()->beneficiary_id);
@@ -163,6 +163,6 @@ class BeneficiaryController extends Controller
 
     private function mayViewBeneficiary($user, int $beneficiaryId): bool
     {
-        return $user?->isAdmin() || (int) $user?->beneficiary_id === $beneficiaryId;
+        return $user?->canManageBarangay() || (int) $user?->beneficiary_id === $beneficiaryId;
     }
 }

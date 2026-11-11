@@ -9,6 +9,7 @@ defineOptions({ layout: AdminLayout });
 defineProps({
     announcements: { type: Array, required: true },
     canDeleteAnnouncements: { type: Boolean, default: false },
+    canPublishAnnouncements: { type: Boolean, default: false },
 });
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
@@ -38,7 +39,7 @@ async function removeAnnouncement(announcement) {
 <template>
     <section class="module-heading"><div><h2>Announcements</h2><p>Publish updates for the staff portal and beneficiary mobile app.</p></div></section>
 
-    <section class="panel record-panel announcement-compose">
+    <section v-if="canPublishAnnouncements" class="panel record-panel announcement-compose">
         <div class="panel-heading"><div><h3>Write an announcement</h3><p></p></div></div>
         <form class="announcement-form" @submit.prevent="publish">
             <label>Title

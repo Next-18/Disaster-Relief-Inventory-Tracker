@@ -136,8 +136,8 @@ class RemainingInertiaPagesTest extends TestCase
             ->assertRedirect(route('admin.settings'))
             ->assertSessionHas('success', 'Settings updated successfully.');
 
-        $this->assertSame('Custom Relief Portal', Setting::where('key', 'site_name')->value('value'));
-        $this->assertSame('San Isidro', Setting::where('key', 'barangay_name')->value('value'));
+        $this->assertNotSame('Custom Relief Portal', Setting::where('key', 'site_name')->value('value'));
+        $this->assertSame('San Isidro', \App\Models\Barangay::query()->oldest('id')->value('name'));
     }
 
     public function test_package_with_distribution_history_cannot_be_deleted(): void
@@ -185,7 +185,7 @@ class RemainingInertiaPagesTest extends TestCase
         $this->from(route('admin.lost-qr'))
             ->withHeader('X-Inertia', 'true')
             ->post(route('admin.lost-qr.report', $beneficiary->id))
-            ->assertRedirect(route('admin.lost-qr'))
+            ->assertRedirect(route('admin.qr-codes', ['tab' => 'lost']))
             ->assertSessionHas('success');
 
         $this->assertDatabaseHas('beneficiaries', ['id' => $beneficiary->id, 'qr_code' => null]);

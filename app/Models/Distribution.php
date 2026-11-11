@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\BelongsToBarangay;
 
 class Distribution extends Model
 {
-    protected $fillable = ['beneficiary_id', 'package_id', 'date_released', 'start_date', 'deadline', 'status', 'notes', 'distributed_by'];
+    use BelongsToBarangay;
+    protected $fillable = ['barangay_id', 'beneficiary_id', 'package_id', 'date_released', 'start_date', 'deadline', 'status', 'notes', 'distributed_by', 'offline_claim_id'];
 
     protected $casts = [
         'date_released' => 'date',

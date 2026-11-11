@@ -134,12 +134,23 @@ class MobileApiWorkflowTest extends TestCase
         $this->assertSame(8, $item->fresh()->quantity);
 
         Sanctum::actingAs($staff);
+        $claimId = (string) \Illuminate\Support\Str::uuid();
         $this->postJson('/api/distributions/release-pending', [
             'beneficiary_no' => $beneficiary->beneficiary_no,
             'distribution_id' => $distribution->id,
+            'offline_claim_id' => $claimId,
         ])
             ->assertOk()
             ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'Released');
+
+        $this->postJson('/api/distributions/release-pending', [
+            'beneficiary_no' => $beneficiary->beneficiary_no,
+            'distribution_id' => $distribution->id,
+            'offline_claim_id' => $claimId,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.id', $distribution->id)
             ->assertJsonPath('data.status', 'Released');
 
         $this->assertSame(8, $item->fresh()->quantity);
@@ -147,7 +158,64 @@ class MobileApiWorkflowTest extends TestCase
             'id' => $distribution->id,
             'status' => 'Released',
             'distributed_by' => $staff->id,
+            'offline_claim_id' => $claimId,
         ]);
+    }
+
+    public function test_direct_mobile_release_recording_is_disabled(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/distributions/record', [
+            'beneficiary_no' => 'BEN-UNVERIFIED',
+            'package_id' => 1,
+        ])
+            ->assertStatus(410)
+            ->assertJsonPath('success', false);
+        $this->assertDatabaseCount('distributions', 0);
+    }
+
+    public function test_web_release_retry_uses_the_same_claim_id_without_deducting_stock_twice(): void
+    {
+        $staff = User::factory()->create(['role' => 'staff']);
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-WEB-RETRY',
+            'full_name' => 'Nina Web Retry',
+            'status' => 'Active',
+        ]);
+        $item = InventoryItem::create([
+            'item_name' => 'Web Water',
+            'category' => 'Water',
+            'quantity' => 10,
+            'unit' => 'cases',
+            'minimum_stock' => 2,
+        ]);
+        $package = ReliefPackage::create(['package_name' => 'Web Water Pack', 'category' => 'Water', 'status' => 'Available']);
+        $package->inventoryItems()->attach($item->id, ['quantity_per_package' => 2]);
+        $distribution = Distribution::create([
+            'beneficiary_id' => $beneficiary->id,
+            'package_id' => $package->id,
+            'date_released' => now()->toDateString(),
+            'status' => 'Pending',
+            'distributed_by' => $staff->id,
+        ]);
+        app(DistributionStockService::class)->consumeFor($distribution);
+        $claimId = (string) \Illuminate\Support\Str::uuid();
+
+        $this->actingAs($staff)->post(route('admin.distribution.release-pending'), [
+            'beneficiary_no' => $beneficiary->beneficiary_no,
+            'distribution_id' => $distribution->id,
+            'offline_claim_id' => $claimId,
+        ])->assertRedirect();
+        $this->post(route('admin.distribution.release-pending'), [
+            'beneficiary_no' => $beneficiary->beneficiary_no,
+            'distribution_id' => $distribution->id,
+            'offline_claim_id' => $claimId,
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('distributions', ['id' => $distribution->id, 'status' => 'Released', 'offline_claim_id' => $claimId]);
+        $this->assertSame(8, $item->fresh()->quantity);
     }
 
     public function test_non_staff_cannot_release_pending_packages_through_the_api(): void

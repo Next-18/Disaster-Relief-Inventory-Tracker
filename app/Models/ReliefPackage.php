@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\BelongsToBarangay;
 
 class ReliefPackage extends Model
 {
-    protected $fillable = ['package_name', 'description', 'category', 'status'];
+    use BelongsToBarangay;
+    protected $fillable = ['barangay_id', 'package_name', 'description', 'category', 'status'];
 
     protected $appends = ['available_quantity'];
 

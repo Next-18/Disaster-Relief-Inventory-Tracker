@@ -10,7 +10,7 @@ class BeneficiaryResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $request->user();
-        $isAdmin = $user?->isAdmin() ?? false;
+        $isAdmin = $user?->canManageBarangay() ?? false;
         $isOwner = $user && (int) $user->beneficiary_id === (int) $this->id;
         $isStaff = $user?->role === 'staff';
 

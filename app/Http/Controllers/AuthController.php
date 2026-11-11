@@ -118,16 +118,26 @@ class AuthController extends Controller
 
         if ($authenticated) {
             $user = Auth::user();
-            if (!$user->canRecordDistributions()) {
+            if (! $user->canSignIn() || ! $user->canRecordDistributions()) {
                 Auth::logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
 
-                return back()->withErrors(['email' => 'Beneficiary accounts must sign in through the mobile app.'])->onlyInput('email');
+                return back()->withErrors(['email' => $user->canSignIn()
+                    ? 'Beneficiary accounts must sign in through the mobile app.'
+                    : 'This account or its barangay workspace is inactive. Contact your administrator.'])->onlyInput('email');
             }
             RateLimiter::clear($key);
+            if ($user->role === 'super_admin') {
+                $request->session()->regenerate();
+                $request->session()->put('pending_super_admin_mfa_id', $user->id);
+                $request->session()->put('pending_super_admin_mfa_remember', $remember);
+                Auth::logout();
+
+                return redirect()->route('mfa.challenge');
+            }
             $request->session()->regenerate();
-            return redirect()->intended(route(Auth::user()->isAdmin() ? 'dashboard' : 'admin.distribution'));
+            return redirect()->intended(route(Auth::user()->role === 'super_admin' ? 'super-admin.barangays' : (Auth::user()->isAdmin() ? 'dashboard' : 'admin.distribution')));
         }
 
         RateLimiter::hit($key, 60);
@@ -144,7 +154,7 @@ class AuthController extends Controller
             return redirect()->route('login');
         }
 
-        return redirect()->route($user->isAdmin() ? 'dashboard' : ($user->canRecordDistributions() ? 'admin.distribution' : 'dashboard'));
+        return redirect()->route($user->role === 'super_admin' ? 'super-admin.barangays' : ($user->isAdmin() ? 'dashboard' : ($user->canRecordDistributions() ? 'admin.distribution' : 'dashboard')));
     }
 
     public function updatePassword(Request $request)
@@ -189,9 +199,12 @@ class AuthController extends Controller
             ->get();
         
         // Get location from settings
-        $barangayName = Setting::get('barangay_name', 'Barangay');
-        $municipality = Setting::get('municipality', 'Municipality');
-        $location = "{$barangayName}, {$municipality}";
+        $activeBarangayId = auth()->user()?->role === 'super_admin' ? request()->session()->get('active_barangay_id') : null;
+        $workspace = $activeBarangayId ? \App\Models\Barangay::find($activeBarangayId) : auth()->user()?->barangay;
+        $isSuperAdmin = auth()->user()?->role === 'super_admin';
+        $location = $isSuperAdmin && ! $activeBarangayId
+            ? 'All barangays'
+            : (($workspace?->name ?? Setting::get('barangay_name', 'Barangay')).', '.($workspace?->municipality ?? Setting::get('municipality', 'Municipality')));
         
         $recentDistributions = $recentDistributions->map(fn (Distribution $distribution) => [
             'id' => $distribution->id,
@@ -221,6 +234,8 @@ class AuthController extends Controller
             'inventoryByCategory' => $inventoryByCategory,
             'stockAlertsCount' => $stockAlertsCount,
             'location' => $location,
+            'isSuperAdmin' => $isSuperAdmin,
+            'activeBarangayId' => $activeBarangayId,
             'today' => now()->format('Y-m-d'),
             'beneficiaries' => Beneficiary::where('status', 'Active')->orderBy('full_name')->get(['id', 'full_name', 'beneficiary_no']),
             'packages' => $packagesReady->sortBy('package_name')->map(fn (ReliefPackage $package) => [
@@ -229,25 +244,6 @@ class AuthController extends Controller
                 'available_quantity' => $package->available_quantity,
             ])->values(),
         ]);
-    }
-
-    public function module(string $module)
-    {
-        $modules = [
-            'beneficiaries' => ['Beneficiaries', '♟', 'Manage beneficiary accounts and household records.'],
-            'inventory' => ['Inventory', '📦', 'Track relief stock, item quantities, and supply movements.'],
-            'packages' => ['Relief Packages', '🎁', 'Create and manage the relief packages issued to families.'],
-            'qr-codes' => ['QR Codes', '▦', 'Generate and verify beneficiary QR codes.'],
-            'lost-qr' => ['Lost QR', '⊘', 'Review and replace reported lost beneficiary QR codes.'],
-            'distribution' => ['Distribution', '▣', 'Record and monitor relief distributions.'],
-            'reports' => ['Reports', '📊', 'Review relief distribution and inventory reports.'],
-            'audit-logs' => ['Audit Logs', '▤', 'View activity recorded across the admin portal.'],
-            'settings' => ['Settings', '⚙', 'Configure inventory tracker preferences and access.'],
-        ];
-
-        abort_unless(isset($modules[$module]), 404);
-        [$title, $icon, $description] = $modules[$module];
-        return Inertia::render('Admin/Module', compact('title', 'icon', 'description'));
     }
 
     public function logout(Request $request)

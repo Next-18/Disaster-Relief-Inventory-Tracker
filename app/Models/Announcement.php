@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Concerns\BelongsToBarangay;
 
 class Announcement extends Model
 {
-    protected $fillable = ['title', 'body', 'is_published', 'created_by'];
+    use BelongsToBarangay;
+    protected $fillable = ['barangay_id', 'title', 'body', 'is_published', 'created_by'];
 
     protected function casts(): array
     {

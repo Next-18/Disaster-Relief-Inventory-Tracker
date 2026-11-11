@@ -9,6 +9,7 @@ defineOptions({ layout: AdminLayout });
 const props = defineProps({
     tickets: { type: Object, required: true },
     isAdmin: { type: Boolean, default: false },
+    isSuperAdmin: { type: Boolean, default: false },
 });
 
 const page = usePage();
@@ -33,7 +34,8 @@ function submitReport() {
 }
 
 function updateTicket(ticket) {
-    ticketForms[ticket.id].patch(routes.value.supportUpdate.replace('__ID__', encodeURIComponent(ticket.id)), {
+    const route = ticket.recipient_role === 'super_admin' ? routes.value.supportUpdate : routes.value.supportUpdateAdmin;
+    ticketForms[ticket.id].patch(route.replace('__ID__', encodeURIComponent(ticket.id)), {
         preserveScroll: true,
     });
 }
@@ -49,11 +51,11 @@ function statusLabel(status) {
 
 <template>
     <section class="module-heading">
-        <div><h2>{{ isAdmin ? 'Support inbox' : 'Report a concern' }}</h2><p>{{ isAdmin ? 'Review requests.' : 'Send a problem or concern to the administrator and follow its progress.' }}</p></div>
+        <div><h2>{{ isSuperAdmin ? 'Barangay Admin Support' : (isAdmin ? 'Support and Contact Super Admin' : 'Report a concern') }}</h2><p>{{ isSuperAdmin ? 'Review and reply to reports sent by barangay administrators.' : (isAdmin ? 'Review local support requests and send a private report to the system Super Admin.' : 'Send a problem or concern to your barangay Admin and follow its progress.') }}</p></div>
     </section>
 
-    <section v-if="!isAdmin" class="panel support-form-panel">
-        <div class="support-panel-heading"><div><h3>Submit a report</h3><p>Include what happened and the steps to reproduce it, if it is a system problem.</p></div></div>
+    <section v-if="!isSuperAdmin" class="panel support-form-panel">
+        <div class="support-panel-heading"><div><h3>{{ isAdmin ? 'Send a report to Super Admin' : 'Submit a report to your barangay Admin' }}</h3><p>Include what happened and the steps to reproduce it, if it is a system problem.</p></div></div>
         <form class="support-form" @submit.prevent="submitReport">
             <label>Short title<input v-model="reportForm.title" maxlength="160" placeholder="e.g. Unable to record a delivery" required><small v-if="reportForm.errors.title" class="field-error">{{ reportForm.errors.title }}</small></label>
             <div class="form-row">
@@ -62,12 +64,12 @@ function statusLabel(status) {
             </div>
             <label>Describe the problem<textarea v-model="reportForm.description" rows="5" minlength="10" maxlength="5000" placeholder="What happened? Which page were you using? What did you expect?" required/><small v-if="reportForm.errors.description" class="field-error">{{ reportForm.errors.description }}</small></label>
             <p class="support-privacy-note">Please don’t include beneficiary passwords, full personal records, or other sensitive information in a report.</p>
-            <div class="support-form-actions"><button class="primary-action" type="submit" :disabled="reportForm.processing">{{ reportForm.processing ? 'Sending…' : 'Send to admin' }}</button></div>
+            <div class="support-form-actions"><button class="primary-action" type="submit" :disabled="reportForm.processing">{{ reportForm.processing ? 'Sending…' : (isAdmin ? 'Send to Super Admin' : 'Send to barangay Admin') }}</button></div>
         </form>
     </section>
 
     <section class="panel support-list-panel">
-        <div class="support-panel-heading"><div><h3>{{ isAdmin ? 'All reports' : 'My reports' }}</h3><p>{{ tickets.total }} {{ tickets.total === 1 ? 'report' : 'reports' }}</p></div></div>
+        <div class="support-panel-heading"><div><h3>{{ isSuperAdmin ? 'Reports from Barangay Admins' : (isAdmin ? 'Barangay support requests and my Super Admin reports' : 'My reports to the barangay Admin') }}</h3><p>{{ tickets.total }} {{ tickets.total === 1 ? 'report' : 'reports' }}</p></div></div>
         <div class="support-ticket-list">
             <article v-for="ticket in rows" :key="ticket.id" class="support-ticket">
                 <header class="support-ticket-header">
@@ -76,15 +78,15 @@ function statusLabel(status) {
                 </header>
                 <div class="support-tags"><span>{{ ticket.type.replaceAll('-', ' ') }}</span><span v-if="ticket.handler">Handled by {{ ticket.handler.name }}</span></div>
                 <p class="support-description">{{ ticket.description }}</p>
-                <div v-if="ticket.admin_response" class="support-response"><strong>Admin response</strong><p>{{ ticket.admin_response }}</p></div>
+                <div v-if="ticket.admin_response" class="support-response"><strong>{{ ticket.recipient_role === 'super_admin' ? 'Super Admin response' : 'Admin response' }}</strong><p>{{ ticket.admin_response }}</p></div>
 
-                <form v-if="isAdmin" class="support-admin-form" @submit.prevent="updateTicket(ticket)">
+                <form v-if="isSuperAdmin || (isAdmin && ticket.recipient_role === 'admin')" class="support-admin-form" @submit.prevent="updateTicket(ticket)">
                     <label>Status<select v-model="ticketForms[ticket.id].status"><option value="open">Open</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option></select><small v-if="ticketForms[ticket.id].errors.status" class="field-error">{{ ticketForms[ticket.id].errors.status }}</small></label>
                     <label>Reply to reporter<textarea v-model="ticketForms[ticket.id].admin_response" rows="3" maxlength="5000" placeholder="Add an update or explain how this was resolved"/><small v-if="ticketForms[ticket.id].errors.admin_response" class="field-error">{{ ticketForms[ticket.id].errors.admin_response }}</small></label>
                     <div class="support-form-actions"><button class="primary-action" type="submit" :disabled="ticketForms[ticket.id].processing">{{ ticketForms[ticket.id].processing ? 'Saving…' : 'Save update' }}</button></div>
                 </form>
             </article>
-            <div v-if="!rows.length" class="support-empty">{{ isAdmin ? 'No reports have been submitted.' : 'You haven’t submitted any reports yet.' }}</div>
+            <div v-if="!rows.length" class="support-empty">{{ isSuperAdmin ? 'No barangay admin reports have been submitted.' : 'You haven’t submitted any reports yet.' }}</div>
         </div>
         <InertiaPagination :links="tickets.links" :show="tickets.last_page > 1" />
     </section>

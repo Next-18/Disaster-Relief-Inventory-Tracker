@@ -30,6 +30,7 @@ const props = defineProps({
     activeBeneficiaries: { type: Number, required: true },
     inactiveBeneficiaries: { type: Number, required: true },
     qrGeneratedCount: { type: Number, required: true },
+    reportScope: { type: String, default: 'Current barangay' },
 });
 
 const page = usePage();
@@ -101,7 +102,7 @@ onBeforeUnmount(() => {
 
 <template>
     <section class="reports-heading">
-        <div><h2>Reports</h2><p>Review distributions for a selected period and check current stock and registry totals.</p></div>
+        <div><h2>Reports</h2><p>Scope: <strong>{{ reportScope }}</strong>. Review distributions for a selected period and check current stock and registry totals.</p></div>
         <div class="report-actions no-print">
             <button class="action-btn" type="button" @click="printReport">Print report</button>
             <a class="action-btn report-export" :href="exportUrl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>Export CSV</a>

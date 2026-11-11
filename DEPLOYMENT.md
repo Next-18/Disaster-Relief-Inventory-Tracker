@@ -9,8 +9,12 @@ This project is currently configured for local development. Do not copy the loca
 - Never commit or share `.env`, `APP_KEY`, database passwords, or `ADMIN_SEED_PASSWORD`. Generate the production key once; do not regenerate it during routine releases.
 - Set `SANCTUM_TOKEN_EXPIRATION` to the desired token lifetime in minutes (the default in this project is 43200 minutes / 30 days). Configure the host scheduler to run Laravel's scheduler at least once per minute so expired-token pruning and overdue distribution cleanup run.
 - New passwords must be at least 12 characters and include uppercase, lowercase, and numeric characters. Existing passwords remain usable until changed.
+- Super Admin web sign-in requires authenticator-app MFA. Confirm the assigned Super Admin can complete first-time enrollment and has stored the one-use recovery codes before opening the production portal to them.
+- The multi-barangay migration does not automatically promote an existing account. After verifying the intended account, an authorized operator can run `php artisan admin:promote-super-admin admin@example.com` to grant that account platform-wide Super Admin access.
+- New QR tokens use 128 bits of randomness. Existing six-character QR tokens are not changed automatically; revoke and reissue old QR codes through the administrator replacement workflow before using real beneficiary records.
 - Point the mobile app's API base URL to the production HTTPS API. Keep the local LAN URL for local development only.
 - Create encrypted, access-controlled database backups and verify a restore before storing real beneficiary records.
+- Follow the [backup and restore runbook](docs/backup-and-restore.md); the application container does not provide durable backups by itself.
 - Review the hosting provider's privacy, data retention, access control, and incident response arrangements with the barangay's responsible privacy officer.
 
 ## Beneficiary QR storage
@@ -38,7 +42,8 @@ This project is currently configured for local development. Do not copy the loca
    - `APP_DEBUG=false`
    - `APP_KEY` with a production-only generated key
    - `APP_URL` with the Render HTTPS URL
-   - `TRUSTED_PROXIES=*` so Laravel resolves visitor IPs from Render's forwarded headers (Laravel trusts the immediate proxy hop)
+   - `TRUSTED_PROXIES=REMOTE_ADDR` so Laravel trusts only the immediate peer for forwarded HTTPS metadata. Do not use `*` here; Laravel's wildcard trusts all IPv4 and IPv6 proxy addresses.
+   - `TRUST_RENDER_CLIENT_IP=true` so the app reads Render's `CF-Connecting-IP` header for rate limits and audit logs. Enable this only when traffic goes through Render's Cloudflare edge, which sets that header. [Render describes its proxy path and client IP header](https://render.com/articles/host-pocketbase-on-render).
    - `DB_CONNECTION=pgsql`
    - `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_SSLMODE=require` using the Supabase connection details
    - `SESSION_DRIVER=database`
@@ -50,16 +55,18 @@ This project is currently configured for local development. Do not copy the loca
    - `FILESYSTEM_DISK=local`
    - All required `QR_STORAGE_*` variables listed above
 3. Let Render build the Dockerfile. It installs production Composer dependencies and builds the Vue/Vite assets. Do not configure a separate manual Composer or npm build command for this Docker deployment.
-4. The container startup command only prepares Laravel and starts Apache. It does not migrate or seed the database. Configure `php artisan migrate --force` as a Render pre-deploy command when that feature is available. Otherwise, run it as a controlled one-off command against the production database after taking a backup and before sending traffic to code that requires the new schema.
+4. The container startup command only prepares Laravel and starts Apache. It does not migrate or seed the database. Configure `php artisan migrate --force` as the Render pre-deploy command for a paid web service. Render runs pre-deploy commands on a separate instance and documents this feature as available for paid web services, private services, and background workers. For a plan without pre-deploy commands, run migrations as a controlled one-off operation after taking a backup and before sending traffic to code that requires the new schema. Set the Render health check path to `/up`.
 
 ### Database and initial administrator
 
 5. Before migrating, back up the production database and inspect its existing schema and migration history. Review each pending migration for compatibility before running `php artisan migrate --force`.
-6. For the initial administrator only, set a unique `ADMIN_SEED_PASSWORD` of at least 12 characters in Render's environment settings. Then run:
+6. For a fresh database, set a unique `ADMIN_SEED_PASSWORD` of at least 12 characters in Render's environment settings and run:
 
    `php artisan db:seed --class="Database\Seeders\AdminOnlySeeder" --force`
 
    The dedicated seeder creates the administrator only if the account does not already exist. It does not reset an existing admin password. Remove the setup credential from Render after initial access is established. Do not run the demonstration `DatabaseSeeder` against production.
+
+   For an existing database, verify the intended account with the barangay, then explicitly promote that existing Admin from the server console with `php artisan admin:promote-super-admin admin@example.com`. The migration does not promote accounts automatically.
 
 ### Barangay staging pilot
 

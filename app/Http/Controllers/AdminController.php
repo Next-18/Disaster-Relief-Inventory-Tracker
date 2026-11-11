@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Barangay;
 use App\Models\Beneficiary;
 use App\Models\Distribution;
 use App\Models\InventoryItem;
@@ -35,6 +36,14 @@ class AdminController extends Controller
             'ip_address' => request()->ip(),
             'user_agent' => request()->userAgent()
         ]);
+    }
+
+    protected function barangayExistsRule(string $table): \Illuminate\Validation\Rules\Exists
+    {
+        $rule = Rule::exists($table, 'id');
+        $barangayId = $this->currentBarangayId(request());
+
+        return $barangayId ? $rule->where(fn ($query) => $query->where('barangay_id', $barangayId)) : $rule;
     }
 
     protected function applyBeneficiaryFilters($query, Request $request)
@@ -373,7 +382,7 @@ class AdminController extends Controller
             'categoryCount' => $categoryCount,
             'categories' => InventoryItem::query()->select('category')->distinct()->orderBy('category')->pluck('category'),
             'filters' => $request->only(['search', 'stock_status', 'per_page']),
-            'canManageInventory' => $request->user()->isAdmin(),
+            'canManageInventory' => $request->user()->canManageBarangay(),
             'canUpdateStock' => $request->user()->canReleasePackages(),
         ]);
     }
@@ -407,7 +416,7 @@ class AdminController extends Controller
             'delivery_date' => ['required', 'date', 'before_or_equal:today'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1', 'max:100'],
-            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', 'exists:inventory_items,id'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', $this->barangayExistsRule('inventory_items')],
             'items.*.quantity_received' => ['required', 'integer', 'min:1', 'max:4294967295'],
             'items.*.quantity_damaged' => ['required', 'integer', 'min:0', 'lte:items.*.quantity_received', 'max:4294967295'],
             'items.*.condition_note' => ['nullable', 'string', 'max:500'],
@@ -659,7 +668,7 @@ class AdminController extends Controller
             'category' => ['required', 'string', 'max:60'],
             'status' => ['required', 'in:Available,Not Available,Unavailable'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', 'exists:inventory_items,id'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', $this->barangayExistsRule('inventory_items')],
             'items.*.quantity_per_package' => ['required', 'integer', 'min:1', 'max:4294967295'],
         ]);
         $ingredients = collect($data['items'])->mapWithKeys(fn ($item) => [
@@ -684,7 +693,7 @@ class AdminController extends Controller
             'category' => ['required', 'string', 'max:60'],
             'status' => ['required', 'in:Available,Not Available,Unavailable'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', 'exists:inventory_items,id'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct', $this->barangayExistsRule('inventory_items')],
             'items.*.quantity_per_package' => ['required', 'integer', 'min:1', 'max:4294967295'],
         ]);
         $ingredients = collect($data['items'])->mapWithKeys(fn ($item) => [
@@ -719,7 +728,7 @@ class AdminController extends Controller
             'reliefPackage:id,package_name',
         ]);
         $canReleasePackages = $request->user()->canReleasePackages();
-        $canAssignDistributions = $request->user()->isAdmin();
+        $canAssignDistributions = $request->user()->canManageBarangay();
         $canViewDistributionHistory = $request->user()->canRecordDistributions();
         $search = trim((string) $request->input('search', ''));
         $status = in_array($request->input('status'), ['Pending', 'Released', 'Cancelled', 'Voided'], true)
@@ -769,7 +778,7 @@ class AdminController extends Controller
             'search' => $search,
             'status' => $status,
             'today' => now()->format('Y-m-d'),
-            'canManageDistributions' => auth()->user()->isAdmin(),
+            'canManageDistributions' => auth()->user()->canManageBarangay(),
             'canAssignDistributions' => $canAssignDistributions,
             'canReleasePackages' => $canReleasePackages,
             'canViewDistributionHistory' => $canViewDistributionHistory,
@@ -825,13 +834,34 @@ class AdminController extends Controller
         $validated = $request->validate([
             'beneficiary_no' => ['required', 'string', 'max:64'],
             'distribution_id' => ['required', 'integer', 'exists:distributions,id'],
+            'offline_claim_id' => ['nullable', 'uuid'],
         ]);
         $beneficiary = Beneficiary::query()
             ->forQrPayload($validated['beneficiary_no'])
             ->where('status', 'Active')
             ->firstOrFail();
 
-        $distribution = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
+        [$distribution, $wasDuplicateRetry] = DB::transaction(function () use ($validated, $beneficiary, $request, $stock) {
+            Beneficiary::query()->lockForUpdate()->findOrFail($beneficiary->id);
+
+            if (! empty($validated['offline_claim_id'])) {
+                $existingClaim = Distribution::query()
+                    ->where('offline_claim_id', $validated['offline_claim_id'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existingClaim) {
+                    abort_unless(
+                        (int) $existingClaim->id === (int) $validated['distribution_id']
+                            && (int) $existingClaim->beneficiary_id === (int) $beneficiary->id,
+                        409,
+                        'This claim identifier has already been used for a different distribution.'
+                    );
+
+                    return [$existingClaim->load(['beneficiary', 'reliefPackage']), true];
+                }
+            }
+
             $distribution = Distribution::query()
                 ->whereKey($validated['distribution_id'])
                 ->where('beneficiary_id', $beneficiary->id)
@@ -853,13 +883,16 @@ class AdminController extends Controller
                 'status' => 'Released',
                 'date_released' => now(),
                 'distributed_by' => $request->user()->id,
+                'offline_claim_id' => $validated['offline_claim_id'] ?? null,
             ]);
             $stock->consumeFor($distribution);
 
-            return $distribution->load(['beneficiary', 'reliefPackage']);
+            return [$distribution->load(['beneficiary', 'reliefPackage']), false];
         });
 
-        $this->logAudit('release', 'distribution', "Released {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name} after QR scan");
+        if (! $wasDuplicateRetry) {
+            $this->logAudit('release', 'distribution', "Released {$distribution->reliefPackage?->package_name} to {$beneficiary->full_name} after QR scan");
+        }
 
         return redirect()->back()->with('success', "{$distribution->reliefPackage?->package_name} released to {$beneficiary->full_name}.");
     }
@@ -870,9 +903,9 @@ class AdminController extends Controller
         $request->merge(['recipient_mode' => $mode]);
         $data = $request->validate([
             'recipient_mode' => ['required', 'in:individual,all,priority'],
-            'beneficiary_id' => ['nullable', 'required_if:recipient_mode,individual', 'exists:beneficiaries,id'],
+            'beneficiary_id' => ['nullable', 'required_if:recipient_mode,individual', $this->barangayExistsRule('beneficiaries')],
             'priority_type' => ['nullable', 'required_if:recipient_mode,priority', 'in:Senior Citizen,PWD,Solo Parent'],
-            'package_id' => ['required', 'exists:relief_packages,id'],
+            'package_id' => ['required', $this->barangayExistsRule('relief_packages')],
             'start_date' => ['required', 'date'],
             'deadline' => ['required', 'date', 'after_or_equal:start_date'],
             'notes' => ['nullable', 'string'],
@@ -932,8 +965,8 @@ class AdminController extends Controller
             return back()->with('error', 'Cancelled or voided distribution history cannot be edited. Create a new assignment if needed.');
         }
         $data = $request->validate([
-            'beneficiary_id' => ['required', 'exists:beneficiaries,id'],
-            'package_id' => ['required', 'exists:relief_packages,id'],
+            'beneficiary_id' => ['required', $this->barangayExistsRule('beneficiaries')],
+            'package_id' => ['required', $this->barangayExistsRule('relief_packages')],
             'start_date' => ['required', 'date'],
             'deadline' => ['required', 'date', 'after_or_equal:start_date'],
             'notes' => ['nullable', 'string'],
@@ -1028,14 +1061,8 @@ protected function generateNextBeneficiaryNumber(): string
 // Generate a unique random QR token.
 protected function generateUniqueQrToken(): string
 {
-    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
     do {
-        $token = '';
-
-        for ($index = 0; $index < 6; $index++) {
-            $token .= $alphabet[random_int(0, strlen($alphabet) - 1)];
-        }
+        $token = bin2hex(random_bytes(16));
 
         $exists = Beneficiary::query()
             ->where(function ($query) use ($token) {
@@ -1187,11 +1214,6 @@ protected function generateUniqueQrToken(): string
         return redirect()->route('admin.qr-codes', ['tab' => 'lost'])->with('success', 'QR code marked as lost. A new one can be generated.');
     }
 
-    public function regenerateQRCode($id)
-    {
-        return $this->generateQRCode($id);
-    }
-
     protected function validateReportFilters(Request $request): array
     {
         return $request->validate([
@@ -1210,6 +1232,9 @@ protected function generateUniqueQrToken(): string
 
     public function reports(Request $request)
     {
+        $reportScope = $request->user()->role === 'super_admin' && ! $request->session()->get('active_barangay_id')
+            ? 'All barangays'
+            : ($this->currentBarangay($request)?->name ?? 'Current barangay');
         $filters = $this->validateReportFilters($request);
         $startDate = $filters['start_date'] ?? null;
         $endDate = $filters['end_date'] ?? null;
@@ -1339,7 +1364,8 @@ protected function generateUniqueQrToken(): string
             'totalBeneficiaries',
             'activeBeneficiaries',
             'inactiveBeneficiaries',
-            'qrGeneratedCount'
+            'qrGeneratedCount',
+            'reportScope'
         ));
     }
 
@@ -1462,47 +1488,86 @@ protected function generateUniqueQrToken(): string
 
     public function settings(Request $request)
     {
+        $isSuperAdmin = $request->user()->role === 'super_admin';
+        $barangayId = $this->currentBarangayId($request);
+
         // Initialize default settings if they don't exist
         $this->initializeDefaultSettings();
 
         if ($request->isMethod('post')) {
-            $request->validate([
-                'site_name' => ['required', 'string', 'max:255'],
-                'site_description' => ['nullable', 'string', 'max:500'],
-                'contact_email' => ['nullable', 'email', 'max:255'],
-                'contact_phone' => ['nullable', 'string', 'max:30'],
-                'barangay_name' => ['required', 'string', 'max:255'],
-                'municipality' => ['required', 'string', 'max:255'],
-                'province' => ['required', 'string', 'max:255'],
-            ]);
+            $rules = [];
+            if ($isSuperAdmin) {
+                $rules += [
+                    'site_name' => ['required', 'string', 'max:255'],
+                    'site_description' => ['nullable', 'string', 'max:500'],
+                    'contact_email' => ['nullable', 'email', 'max:255'],
+                    'contact_phone' => ['nullable', 'string', 'max:30'],
+                ];
+            }
+            if ($barangayId) {
+                $rules += [
+                    'barangay_name' => ['required', 'string', 'max:255'],
+                    'municipality' => ['required', 'string', 'max:255'],
+                    'province' => ['required', 'string', 'max:255'],
+                ];
+            }
+            abort_unless($rules !== [], 403);
+            $data = $request->validate($rules);
 
-            // Save general settings
-            Setting::set('site_name', $request->site_name, 'string', 'general', 'Name of the inventory tracker site');
-            Setting::set('site_description', $request->site_description, 'string', 'general', 'Site description');
-            Setting::set('contact_email', $request->contact_email, 'string', 'general', 'Contact email address');
-            Setting::set('contact_phone', $request->contact_phone, 'string', 'general', 'Contact phone number');
+            if ($isSuperAdmin) {
+                Setting::set('site_name', $data['site_name'], 'string', 'general', 'Name of the inventory tracker site');
+                Setting::set('site_description', $data['site_description'] ?? null, 'string', 'general', 'Site description');
+                Setting::set('contact_email', $data['contact_email'] ?? null, 'string', 'general', 'Contact email address');
+                Setting::set('contact_phone', $data['contact_phone'] ?? null, 'string', 'general', 'Contact phone number');
+            }
 
-            // Save location settings
-            Setting::set('barangay_name', $request->barangay_name, 'string', 'location', 'Barangay name');
-            Setting::set('municipality', $request->municipality, 'string', 'location', 'Municipality name');
-            Setting::set('province', $request->province, 'string', 'location', 'Province name');
+            if ($barangayId) {
+                Barangay::query()->findOrFail($barangayId)->update([
+                    'name' => trim($data['barangay_name']),
+                    'municipality' => trim($data['municipality']),
+                    'province' => trim($data['province']),
+                ]);
+            }
 
             $this->logAudit('update', 'settings', 'Updated site and location settings');
             return redirect()->route('admin.settings')->with('success', 'Settings updated successfully.');
         }
 
         // Get current settings
+        $workspace = $barangayId ? Barangay::query()->find($barangayId) : null;
         $settings = [
-            'site_name' => Setting::get('site_name', 'Relief Inventory Tracker'),
-            'site_description' => Setting::get('site_description', 'Track and manage relief operations'),
-            'contact_email' => Setting::get('contact_email'),
-            'contact_phone' => Setting::get('contact_phone'),
-            'barangay_name' => Setting::get('barangay_name', 'Barangay San Juan'),
-            'municipality' => Setting::get('municipality', 'Surigao City'),
-            'province' => Setting::get('province', 'Province'),
+            'site_name' => $isSuperAdmin ? Setting::get('site_name', 'Relief Inventory Tracker') : null,
+            'site_description' => $isSuperAdmin ? Setting::get('site_description', 'Track and manage relief operations') : null,
+            'contact_email' => $isSuperAdmin ? Setting::get('contact_email') : null,
+            'contact_phone' => $isSuperAdmin ? Setting::get('contact_phone') : null,
+            'barangay_name' => $workspace?->name,
+            'municipality' => $workspace?->municipality,
+            'province' => $workspace?->province,
         ];
 
-        return Inertia::render('Admin/Settings', compact('settings'));
+        return Inertia::render('Admin/Settings', [
+            'settings' => $settings,
+            'isSuperAdmin' => $isSuperAdmin,
+            'hasBarangayWorkspace' => (bool) $barangayId,
+            'mfaEnabled' => $isSuperAdmin && (bool) $request->user()->mfa_enabled_at,
+            'mfaRecoveryCodes' => $isSuperAdmin ? $request->session()->pull('mfa_recovery_codes_once', []) : [],
+        ]);
+    }
+
+    private function currentBarangay(Request $request): ?Barangay
+    {
+        $id = $this->currentBarangayId($request);
+        return $id ? Barangay::find($id) : null;
+    }
+
+    private function currentBarangayId(Request $request): ?int
+    {
+        $user = $request->user();
+        if ($user?->role === 'super_admin') {
+            return $request->session()->get('active_barangay_id');
+        }
+
+        return $user?->barangay_id ?: Barangay::query()->oldest('id')->value('id');
     }
 
     private function initializeDefaultSettings()
@@ -1530,7 +1595,7 @@ protected function generateUniqueQrToken(): string
 
     public function users()
     {
-        $users = User::with('beneficiary')->latest()->paginate(10);
+        $users = $this->usersInCurrentBarangay()->with('beneficiary')->latest()->paginate(10);
 
         return inertia('Admin/Users', [
             'users' => $users
@@ -1556,43 +1621,60 @@ protected function generateUniqueQrToken(): string
         return redirect()->route('admin.users')->with('success', ucfirst($user->role) . ' account created successfully.');
     }
 
-    private function generateSecurePassword()
+    private function usersInCurrentBarangay(): Builder
     {
-        $length = 12;
-        $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*';
-        $charactersLength = strlen($characters);
-        $randomPassword = '';
-
-        for ($i = 0; $i < $length; $i++) {
-            $randomPassword .= $characters[rand(0, $charactersLength - 1)];
+        $query = User::query()->where('role', '!=', 'super_admin');
+        $user = request()->user();
+        if ($user?->role !== 'super_admin') {
+            $barangayId = $user?->barangay_id ?: Barangay::query()->oldest('id')->value('id');
+            $query->where(function (Builder $tenant) use ($barangayId) {
+                $tenant->where('barangay_id', $barangayId);
+                if ((int) $barangayId === (int) Barangay::query()->oldest('id')->value('id')) {
+                    $tenant->orWhereNull('barangay_id');
+                }
+            });
+        } elseif (request()->session()->has('active_barangay_id')) {
+            $query->where('barangay_id', request()->session()->get('active_barangay_id'));
         }
 
-        return $randomPassword;
+        return $query;
     }
 
-    private function generateEasyPassword($fullName)
+    public function updateUserStatus(Request $request, $id)
     {
-        // Generate easy-to-remember password based on name
-        $words = explode(' ', $fullName);
-        $firstWord = strtolower($words[0]);
-        $password = '';
+        $user = $this->usersInCurrentBarangay()->findOrFail($id);
+        abort_if((int) $user->id === (int) $request->user()->id, 403, 'You cannot deactivate your own account.');
 
-        // Use first word + random 2-digit number
-        $password = $firstWord . rand(10, 99);
+        $data = $request->validate(['is_active' => ['required', 'boolean']]);
+        $isActive = (bool) $data['is_active'];
+        if (! $isActive && $user->role === 'admin') {
+            $activeAdminCount = $this->usersInCurrentBarangay()
+                ->where('role', 'admin')
+                ->where('is_active', true)
+                ->count();
+            if ($activeAdminCount <= 1) {
+                return back()->with('error', 'Keep at least one active barangay Admin account.');
+            }
+        }
 
-        // Add a special character for security
-        $specialChars = ['!', '@', '#', '$'];
-        $password .= $specialChars[array_rand($specialChars)];
+        $user->is_active = $isActive;
+        $user->save();
+        if (! $isActive) {
+            $user->tokens()->delete();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+        }
 
-        // Capitalize first letter
-        $password = ucfirst($password);
+        $verb = $isActive ? 'Reactivated' : 'Deactivated';
+        $this->logAudit($isActive ? 'activate' : 'deactivate', 'users', "{$verb} account for: {$user->name}");
 
-        return $password;
+        return redirect()->route('admin.users')->with('success', $isActive
+            ? "{$user->name}'s account is active again."
+            : "{$user->name}'s account was deactivated and mobile tokens were revoked.");
     }
 
     public function updateUser(Request $request, $id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->usersInCurrentBarangay()->findOrFail($id);
 
         if ($user->role === 'user') {
             $data = $request->validate([
@@ -1638,7 +1720,7 @@ protected function generateUniqueQrToken(): string
                 'nullable',
                 'required_if:role,user',
                 'integer',
-                'exists:beneficiaries,id',
+                $this->barangayExistsRule('beneficiaries'),
                 Rule::unique('users', 'beneficiary_id')->ignore($id),
             ],
             'role' => ['required', 'string', 'in:admin,staff,volunteer,user'],
@@ -1665,7 +1747,7 @@ protected function generateUniqueQrToken(): string
 
     public function deleteUser($id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->usersInCurrentBarangay()->findOrFail($id);
 
         if ($user->id === auth()->id()) {
             return back()->with('error', 'You cannot delete your own account.');

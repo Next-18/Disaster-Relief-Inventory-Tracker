@@ -8,6 +8,7 @@ const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
 const currentPath = computed(() => new URL(page.url, window.location.origin).pathname);
 const user = computed(() => page.props.auth?.user ?? {});
+const activeBarangayId = computed(() => page.props.activeBarangayId ?? null);
 
 const allLinks = [
     { label: 'Dashboard', href: routes.value.dashboard, icon: 'dashboard' },
@@ -24,7 +25,19 @@ const allLinks = [
     { label: 'Users', href: routes.value.users, icon: 'users' },
     { label: 'Settings', href: routes.value.settings, icon: 'settings' },
 ];
+const superAdminLinks = computed(() => allLinks.map((link) => link.label === 'Support'
+    ? { ...link, label: 'Admin Support', href: routes.value.supportSuperAdmin }
+    : link));
 const groups = computed(() => {
+    if (user.value.role === 'super_admin') {
+        const platform = [
+            { label: 'Barangays', href: routes.value.barangays, icon: 'settings' },
+        ];
+        return [
+            { label: 'Platform', links: platform },
+            { label: activeBarangayId.value ? 'Barangay workspace' : 'Barangay pages', links: superAdminLinks.value },
+        ];
+    }
     if (user.value.role === 'admin') {
         return [
             { label: 'Overview', links: allLinks.filter((link) => link.label === 'Dashboard') },
@@ -46,7 +59,7 @@ const groups = computed(() => {
         { label: 'Help', links: allLinks.filter((link) => link.label === 'Support') },
     ];
 });
-const homeRoute = computed(() => user.value.role === 'admin' ? routes.value.dashboard : routes.value.distribution);
+const homeRoute = computed(() => user.value.role === 'super_admin' ? routes.value.barangays : (user.value.role === 'admin' ? routes.value.dashboard : routes.value.distribution));
 
 const isActive = (href) => Boolean(href) && currentPath.value === new URL(href, window.location.origin).pathname;
 </script>

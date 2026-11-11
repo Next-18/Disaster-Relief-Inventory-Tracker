@@ -18,6 +18,8 @@ const props = defineProps({
     recentDistributions: { type: Array, required: true },
     beneficiaries: { type: Array, required: true },
     packages: { type: Array, required: true },
+    isSuperAdmin: { type: Boolean, default: false },
+    activeBarangayId: { type: Number, default: null },
 });
 
 const modal = ref(null);
@@ -64,8 +66,8 @@ function initials(name) {
 <template>
     <section class="welcome">
         <div>
-            <h2>Welcome, Barangay Administrator</h2>
-            <p>Inventory and distribution overview for <strong>{{ location }}</strong>.</p>
+            <h2>{{ isSuperAdmin ? (activeBarangayId ? 'Barangay workspace overview' : 'All barangays overview') : 'Welcome, Barangay Administrator' }}</h2>
+            <p>{{ isSuperAdmin && !activeBarangayId ? 'Cross-barangay inventory and distribution overview.' : 'Inventory and distribution overview for' }} <strong>{{ location }}</strong>.</p>
         </div>
         <button class="add-button" type="button" @click="openDistributionModal"><span>+</span> Record Distribution</button>
     </section>

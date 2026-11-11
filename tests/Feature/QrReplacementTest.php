@@ -51,7 +51,7 @@ class QrReplacementTest extends TestCase
 
        $this->assertSame('BEN-7001', $beneficiary->beneficiary_no);
 $this->assertNotSame('OLDQR7', $beneficiary->qr_token);
-$this->assertMatchesRegularExpression('/^[A-HJ-NP-Z2-9]{6}$/', $beneficiary->qr_token);
+$this->assertMatchesRegularExpression('/\A[a-f0-9]{32}\z/', $beneficiary->qr_token);
 $this->assertFalse($beneficiary->qr_revoked);
 $this->assertSame('BEN-7001', $user->fresh()->email);
         $this->assertFalse(Beneficiary::query()->forQrPayload('OLDQR7')->exists());
@@ -92,7 +92,7 @@ $this->assertSame('BEN-7001', $user->fresh()->email);
 
         $this->actingAs($admin)
             ->post(route('admin.lost-qr.report', $beneficiary->id))
-            ->assertRedirect(route('admin.lost-qr'));
+            ->assertRedirect(route('admin.qr-codes', ['tab' => 'lost']));
 
         $beneficiary->refresh();
         $this->assertNull($beneficiary->qr_code);
@@ -108,7 +108,7 @@ $this->assertSame('BEN-7001', $user->fresh()->email);
         $replacement = $beneficiary->fresh();
 $this->assertSame('BEN-7003', $replacement->beneficiary_no);
 $this->assertNotSame('LEGACY7', $replacement->qr_token);
-$this->assertMatchesRegularExpression('/^[A-HJ-NP-Z2-9]{6}$/', $replacement->qr_token);
+$this->assertMatchesRegularExpression('/\A[a-f0-9]{32}\z/', $replacement->qr_token);
 $this->assertFalse($replacement->qr_revoked);
 $this->assertSame('BEN-7003', $user->fresh()->email);        $this->assertFalse(Beneficiary::query()->forQrPayload('LEGACY7')->exists());
         $this->assertFalse(Beneficiary::query()->forQrPayload('BEN-7003')->exists());
@@ -148,7 +148,7 @@ $this->assertSame('BEN-7003', $user->fresh()->email);        $this->assertFalse(
 
         $this->actingAs($admin)
             ->post(route('admin.lost-qr.generate', $beneficiary->id))
-            ->assertRedirect(route('admin.lost-qr'))
+            ->assertRedirect(route('admin.qr-codes', ['tab' => 'lost']))
             ->assertSessionHas('success', fn (string $message) => str_contains($message, 'New beneficiary code:'));
 
         $replacement = $beneficiary->fresh();
@@ -192,7 +192,7 @@ $this->assertSame('BEN-7003', $user->fresh()->email);        $this->assertFalse(
 
         $this->actingAs($admin)
             ->post(route('admin.lost-qr.report', $beneficiary->id))
-            ->assertRedirect(route('admin.lost-qr'));
+            ->assertRedirect(route('admin.qr-codes', ['tab' => 'lost']));
 
         $disk = \Mockery::mock(Filesystem::class);
         $disk->shouldReceive('put')->once()->andReturn(false);

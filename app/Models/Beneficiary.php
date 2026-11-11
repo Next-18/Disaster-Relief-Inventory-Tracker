@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\BelongsToBarangay;
 
 class Beneficiary extends Model
 {
-    protected $fillable = ['beneficiary_no', 'qr_code', 'qr_token', 'qr_revoked', 'full_name', 'contact_number', 'address', 'purok', 'household_size', 'priority_type', 'status'];
+    use BelongsToBarangay;
+    protected $fillable = ['beneficiary_no', 'barangay_id', 'qr_code', 'qr_token', 'qr_revoked', 'full_name', 'contact_number', 'address', 'purok', 'household_size', 'priority_type', 'status'];
 
     protected function casts(): array
     {

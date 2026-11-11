@@ -5,7 +5,13 @@ import AdminLayout from '../../Layouts/AdminLayout.vue';
 
 defineOptions({ layout: AdminLayout });
 
-const props = defineProps({ settings: { type: Object, required: true } });
+const props = defineProps({
+    settings: { type: Object, required: true },
+    isSuperAdmin: { type: Boolean, default: false },
+    hasBarangayWorkspace: { type: Boolean, default: false },
+    mfaEnabled: { type: Boolean, default: false },
+    mfaRecoveryCodes: { type: Array, default: () => [] },
+});
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
 const form = useForm({
@@ -18,6 +24,7 @@ const form = useForm({
     province: props.settings.province ?? '',
 });
 const passwordForm = useForm({ current_password: '', password: '', password_confirmation: '' });
+const mfaForm = useForm({ current_password: '', code: '' });
 
 watch(() => props.settings, (settings) => {
     Object.assign(form, {
@@ -42,12 +49,16 @@ function updatePassword() {
         onError: () => passwordForm.reset(),
     });
 }
+
+function disableMfa() {
+    mfaForm.post(routes.value.mfaDisable, { preserveScroll: true, onSuccess: () => mfaForm.reset() });
+}
 </script>
 
 <template>
-    <section class="module-heading"><div><h2>Settings</h2><p>Configure inventory tracker preferences and access.</p></div></section>
+    <section class="module-heading"><div><h2>Settings</h2><p v-if="isSuperAdmin && !hasBarangayWorkspace">Manage platform details. Select a barangay workspace to edit its location details.</p><p v-else>Configure {{ isSuperAdmin ? 'platform and barangay' : 'barangay' }} settings and account security.</p></div></section>
     <form class="settings-form" @submit.prevent="saveSettings">
-        <section class="panel record-panel">
+        <section v-if="isSuperAdmin" class="panel record-panel">
             <div class="panel-heading"><div><h3>General Settings</h3><p>Basic site configuration and contact information</p></div></div>
             <div class="settings-fields">
                 <label>Site Name<input v-model="form.site_name" type="text" required><small v-if="form.errors.site_name" class="field-error">{{ form.errors.site_name }}</small></label>
@@ -58,7 +69,7 @@ function updatePassword() {
                 </div>
             </div>
         </section>
-        <section class="panel record-panel">
+        <section v-if="hasBarangayWorkspace" class="panel record-panel">
             <div class="panel-heading"><div><h3>Location Settings</h3><p>Geographic information for reports and documentation</p></div></div>
             <div class="settings-fields settings-grid three-columns">
                 <label>Barangay Name<input v-model="form.barangay_name" type="text" required><small v-if="form.errors.barangay_name" class="field-error">{{ form.errors.barangay_name }}</small></label>
@@ -66,8 +77,8 @@ function updatePassword() {
                 <label>Province<input v-model="form.province" type="text" required><small v-if="form.errors.province" class="field-error">{{ form.errors.province }}</small></label>
             </div>
         </section>
-        <section class="settings-save-row">
-            <p>Changes to site and location details are saved together.</p>
+        <section v-if="isSuperAdmin || hasBarangayWorkspace" class="settings-save-row">
+            <p>Changes apply to {{ isSuperAdmin && hasBarangayWorkspace ? 'platform and selected barangay' : (isSuperAdmin ? 'the platform' : 'your barangay') }}.</p>
             <button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : 'Save settings' }}</button>
         </section>
     </form>
@@ -82,6 +93,22 @@ function updatePassword() {
             </div>
             <div class="settings-actions"><button class="security-save" type="submit" :disabled="passwordForm.processing">{{ passwordForm.processing ? 'Updating…' : 'Update password' }}</button></div>
         </form>
+    </section>
+    <section v-if="isSuperAdmin" class="panel record-panel security-panel">
+        <div class="panel-heading"><div><h3>Multi-factor authentication</h3><p>Authenticator codes are required every time a Super Admin signs in.</p></div></div>
+        <div class="settings-fields">
+            <p v-if="mfaEnabled" class="mfa-state">Authenticator protection is enabled.</p>
+            <p v-else class="mfa-state">Setup is required at your next sign-in. Keep your recovery codes somewhere private and separate from this device.</p>
+            <div v-if="mfaRecoveryCodes.length" class="recovery-codes" role="status">
+                <strong>Save these recovery codes now. Each code works once.</strong>
+                <code v-for="code in mfaRecoveryCodes" :key="code">{{ code }}</code>
+            </div>
+            <form v-if="mfaEnabled" class="settings-fields mfa-disable-form" @submit.prevent="disableMfa">
+                <label>Current password<input v-model="mfaForm.current_password" type="password" autocomplete="current-password" required><small v-if="mfaForm.errors.current_password" class="field-error">{{ mfaForm.errors.current_password }}</small></label>
+                <label>Authenticator or recovery code<input v-model="mfaForm.code" autocomplete="one-time-code" required><small v-if="mfaForm.errors.code" class="field-error">{{ mfaForm.errors.code }}</small></label>
+                <button class="security-save" type="submit" :disabled="mfaForm.processing">{{ mfaForm.processing ? 'Updating…' : 'Reset authenticator setup' }}</button>
+            </form>
+        </div>
     </section>
 </template>
 
@@ -99,6 +126,11 @@ function updatePassword() {
 .settings-save-row p { margin: 0 auto 0 0; color: #718096; font-size: 12px; }
 .security-panel { margin-top: 14px; }
 .password-guidance { margin: 0; color: #718096; font-size: 12px; }
+.mfa-state { margin: 0; color: #344054; font-size: 13px; }
+.mfa-disable-form { padding: 0; }
+.recovery-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 14px; border: 1px solid #fdb022; border-radius: 8px; background: #fffaeb; }
+.recovery-codes strong { grid-column: 1 / -1; color: #7a2e0e; font-size: 13px; }
+.recovery-codes code { color: #344054; font-size: 13px; }
 .security-save { min-height: 38px; padding: 9px 14px; border: 1px solid #2563eb; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .security-save:hover { border-color: #1d4ed8; background: #1d4ed8; }
 .security-save:disabled { cursor: wait; opacity: .65; }

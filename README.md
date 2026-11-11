@@ -29,6 +29,10 @@ For local demonstration data, review `DatabaseSeeder` before running `php artisa
 - **Distribution windows:** pending assignments reserve stock. A pending assignment past its deadline is cancelled by the scheduled expiry command, reserved stock is restored, and the beneficiary is notified. A distribution is not confirmed as picked up until staff complete the QR check-in flow.
 - **QR replacement:** reporting a QR as lost and replacing it revokes the prior QR credential. Treat exported QR images as private beneficiary credentials.
 
+## Multi-barangay workspaces
+
+The super admin opens **Barangays** to create a barangay together with its first administrator, then uses **Open workspace** to manage that barangay. Staff and barangay administrators are scoped to their assigned barangay across beneficiaries, stock, packages, distributions, announcements, support tickets, deliveries, audit logs, and API data. The multi-barangay migration creates a default barangay and assigns existing records to it. It does not promote an existing account; promote a deliberately selected Admin from the server console with `php artisan admin:promote-super-admin admin@example.com`. Back up the database and review the normal controlled migration steps before deploying this migration.
+
 ## Scheduler
 
 Laravel must invoke its scheduler every minute for overdue distribution cleanup to run. The project schedule also prunes expired Sanctum tokens daily. On a local Windows Laragon machine, create a Task Scheduler task with a one-minute repeat trigger and this action, which starts the scheduler without opening a console window:

@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\BelongsToBarangay;
 
 class InventoryItem extends Model
 {
-    protected $fillable = ['item_name', 'category', 'quantity', 'unit', 'minimum_stock', 'status'];
+    use BelongsToBarangay;
+    protected $fillable = ['barangay_id', 'item_name', 'category', 'quantity', 'unit', 'minimum_stock', 'status'];
 
     protected function casts(): array
     {

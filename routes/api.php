@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+Route::middleware(['auth:sanctum', 'mobile-user'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
@@ -31,35 +31,35 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
-Route::get('/auth/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
-Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->middleware('auth:sanctum');
-Route::get('/notifications', [NotificationController::class, 'index'])->middleware('auth:sanctum');
-Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])->middleware('auth:sanctum');
-Route::get('/announcements', [AnnouncementController::class, 'index'])->middleware('auth:sanctum');
-Route::get('/support/tickets', [SupportTicketController::class, 'index'])->middleware('auth:sanctum');
-Route::post('/support/tickets', [SupportTicketController::class, 'store'])->middleware(['auth:sanctum', 'throttle:5,1']);
+Route::get('/auth/me', [AuthController::class, 'me'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::post('/auth/change-password', [AuthController::class, 'changePassword'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/notifications', [NotificationController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/announcements', [AnnouncementController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/support/tickets', [SupportTicketController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::post('/support/tickets', [SupportTicketController::class, 'store'])->middleware(['auth:sanctum', 'mobile-user', 'throttle:5,1']);
 
 // Dashboard routes
-Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->middleware('auth:sanctum');
+Route::get('/dashboard/stats', [DashboardController::class, 'stats'])->middleware(['auth:sanctum', 'mobile-user']);
 
 // Beneficiary routes
-Route::get('/beneficiaries', [BeneficiaryController::class, 'index'])->middleware('auth:sanctum');
-Route::get('/beneficiaries/{id}', [BeneficiaryController::class, 'show'])->middleware('auth:sanctum');
-Route::put('/beneficiaries/{id}', [BeneficiaryController::class, 'update'])->middleware('auth:sanctum');
-Route::get('/beneficiaries/qr/{qrCode}', [BeneficiaryController::class, 'showByQrCode'])->middleware('auth:sanctum');
+Route::get('/beneficiaries', [BeneficiaryController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/beneficiaries/{id}', [BeneficiaryController::class, 'show'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::put('/beneficiaries/{id}', [BeneficiaryController::class, 'update'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/beneficiaries/qr/{qrCode}', [BeneficiaryController::class, 'showByQrCode'])->middleware(['auth:sanctum', 'mobile-user', 'throttle:60,1']);
 
 // Inventory routes
-Route::get('/inventory', [InventoryController::class, 'index'])->middleware(['auth:sanctum', 'distribution-staff']);
-Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock'])->middleware(['auth:sanctum', 'distribution-staff']);
+Route::get('/inventory', [InventoryController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user', 'distribution-staff']);
+Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock'])->middleware(['auth:sanctum', 'mobile-user', 'distribution-staff']);
 
 // Relief Package routes
-Route::get('/packages', [PackageController::class, 'index'])->middleware('auth:sanctum');
-Route::get('/packages/available', [PackageController::class, 'available'])->middleware('auth:sanctum');
+Route::get('/packages', [PackageController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/packages/available', [PackageController::class, 'available'])->middleware(['auth:sanctum', 'mobile-user']);
 
 // Distribution routes
-Route::get('/distributions', [DistributionController::class, 'index'])->middleware('auth:sanctum');
-Route::post('/distributions', [DistributionController::class, 'store'])->middleware(['auth:sanctum', 'admin']);
-Route::post('/distributions/release-pending', [DistributionController::class, 'releasePending'])->middleware(['auth:sanctum', 'distribution-staff']);
-Route::get('/distributions/{id}', [DistributionController::class, 'show'])->middleware('auth:sanctum');
-Route::get('/distributions/beneficiary/{beneficiaryId}', [DistributionController::class, 'byBeneficiary'])->middleware('auth:sanctum');
-Route::post('/distributions/record', [DistributionController::class, 'record'])->middleware(['auth:sanctum', 'admin']);
+Route::get('/distributions', [DistributionController::class, 'index'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::post('/distributions', [DistributionController::class, 'store'])->middleware(['auth:sanctum', 'mobile-user', 'admin']);
+Route::post('/distributions/release-pending', [DistributionController::class, 'releasePending'])->middleware(['auth:sanctum', 'mobile-user', 'distribution-staff']);
+Route::get('/distributions/{id}', [DistributionController::class, 'show'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::get('/distributions/beneficiary/{beneficiaryId}', [DistributionController::class, 'byBeneficiary'])->middleware(['auth:sanctum', 'mobile-user']);
+Route::post('/distributions/record', [DistributionController::class, 'record'])->middleware(['auth:sanctum', 'mobile-user', 'admin']);
