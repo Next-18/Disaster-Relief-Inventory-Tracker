@@ -9,7 +9,7 @@ class AdminOnlySeeder extends Seeder
 {
     public function run(): void
     {
-        $email = 'admin@barangay.gov.ph';
+        $email = 'superadmin@relieftracker.com';
         $password = config('app.admin_seed_password');
 
         if (! is_string($password) || strlen($password) < 12) {
@@ -21,18 +21,18 @@ class AdminOnlySeeder extends Seeder
         $admin = User::query()->where('email', $email)->first();
 
         if ($admin) {
-            if (! in_array($admin->role, ['admin', 'super_admin'], true)) {
+            if ($admin->role !== 'super_admin') {
                 throw new \RuntimeException(
-                    'The configured administrator email is already assigned to a non-admin account.'
+                    'The configured Super Admin email already belongs to a non-super-admin account.'
                 );
             }
 
-            // Existing administrator: do not modify the account.
+            // Existing Super Admin: do not modify the account.
             return;
         }
 
         User::create([
-            'name' => 'Barangay Administrator',
+            'name' => 'ReliefTrack Super Administrator',
             'email' => $email,
             'password' => $password,
             'role' => 'super_admin',
