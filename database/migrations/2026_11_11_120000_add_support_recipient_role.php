@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('support_tickets', function (Blueprint $table) {
-            $table->string('recipient_role', 30)->default('admin')->after('status');
+            $table->string('recipient_role', 30)->default('admin');
             $table->index(['recipient_role', 'status', 'created_at']);
         });
     }

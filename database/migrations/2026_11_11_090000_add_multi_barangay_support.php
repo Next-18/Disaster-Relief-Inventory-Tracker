@@ -37,7 +37,7 @@ return new class extends Migration
         foreach ($this->tables as $tableName) {
             if (! Schema::hasTable($tableName)) continue;
             Schema::table($tableName, function (Blueprint $table) {
-                $table->foreignId('barangay_id')->nullable()->after('id')->constrained()->nullOnDelete();
+                $table->foreignId('barangay_id')->nullable()->constrained()->nullOnDelete();
             });
             DB::table($tableName)->whereNull('barangay_id')->update(['barangay_id' => $barangayId]);
         }
