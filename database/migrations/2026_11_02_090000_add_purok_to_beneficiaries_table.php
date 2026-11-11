@@ -1,3 +1,4 @@
+
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -8,15 +9,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('beneficiaries', function (Blueprint $table) {
-            $table->string('purok', 100)->nullable();
-        });
+        if (! Schema::hasColumn('beneficiaries', 'purok')) {
+            Schema::table('beneficiaries', function (Blueprint $table) {
+                $table->string('purok', 100)->nullable();
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('beneficiaries', function (Blueprint $table) {
-            $table->dropColumn('purok');
-        });
+        if (Schema::hasColumn('beneficiaries', 'purok')) {
+            Schema::table('beneficiaries', function (Blueprint $table) {
+                $table->dropColumn('purok');
+            });
+        }
     }
 };
