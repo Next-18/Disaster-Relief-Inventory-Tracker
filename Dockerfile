@@ -123,6 +123,7 @@ EXPOSE 10000
 # 1. Configure Apache port
 # 2. Discover Laravel packages
 # 3. Cache Laravel configuration
-# 4. Start Apache
+# 4. Run production setup ONLY when explicitly enabled
+# 5. Start Apache
 
-CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; exec apache2-foreground"]
+CMD ["bash", "-c", "set -e; PORT=${PORT:-10000}; sed -ri \"s/^Listen 80$/Listen ${PORT}/\" /etc/apache2/ports.conf; sed -ri \"s/<VirtualHost \\*:80>/<VirtualHost *:${PORT}>/\" /etc/apache2/sites-available/000-default.conf; php artisan package:discover --ansi; php artisan config:cache; if [ \"${RUN_PRODUCTION_SETUP:-false}\" = \"true\" ]; then php artisan migrate --force; php artisan db:seed --class=AdminOnlySeeder --force; fi; exec apache2-foreground"]
