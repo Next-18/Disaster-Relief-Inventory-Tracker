@@ -133,8 +133,8 @@ class RemainingInertiaPagesTest extends TestCase
                 'municipality' => 'Sample City',
                 'province' => 'Sample Province',
             ])
-            ->assertRedirect(route('admin.settings'))
-            ->assertSessionHas('success', 'Settings updated successfully.');
+                      ->assertRedirect(route('admin.settings'))
+            ->assertSessionHas('success', 'Barangay location settings updated successfully.');
 
         $this->assertNotSame('Custom Relief Portal', Setting::where('key', 'site_name')->value('value'));
         $this->assertSame('San Isidro', \App\Models\Barangay::query()->oldest('id')->value('name'));

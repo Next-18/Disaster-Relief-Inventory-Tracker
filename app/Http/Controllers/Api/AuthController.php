@@ -4,14 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Totp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
-use App\Support\Totp;
 
 class AuthController extends Controller
 {
@@ -22,6 +21,7 @@ class AuthController extends Controller
             'message' => 'Beneficiary accounts must be created or verified by an administrator.',
         ], 403);
     }
+
     public function login(Request $request)
     {
         $validated = $request->validate([
@@ -31,44 +31,77 @@ class AuthController extends Controller
             'mfa_code' => ['nullable', 'string', 'max:32'],
         ]);
 
-        $identifier = trim((string) ($validated['username'] ?? $validated['beneficiary_no']));
-        $user = User::query()->whereRaw('LOWER(username) = ?', [Str::lower($identifier)])->first();
+        $identifier = trim(
+            (string) ($validated['username'] ?? $validated['beneficiary_no'])
+        );
+
+        $user = User::query()
+            ->whereRaw('LOWER(username) = ?', [Str::lower($identifier)])
+            ->first();
 
         if (! $user) {
-            $legacyIdentifier = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? $identifier : Str::upper($identifier);
-            $user = User::query()->whereRaw('LOWER(email) = ?', [Str::lower($legacyIdentifier)])->first();
+            $legacyIdentifier = filter_var($identifier, FILTER_VALIDATE_EMAIL)
+                ? $identifier
+                : Str::upper($identifier);
+
+            $user = User::query()
+                ->whereRaw('LOWER(email) = ?', [Str::lower($legacyIdentifier)])
+                ->first();
         }
 
         if (! $user || ! Hash::check($validated['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'beneficiary_no' => ['The username, beneficiary code, or password is incorrect.'],
+                'beneficiary_no' => [
+                    'The username, beneficiary code, or password is incorrect.',
+                ],
             ]);
         }
 
-        Auth::login($user);
-        if (!$user || ! $user->canSignIn() || $user->role === 'super_admin' || (! $user->canRecordDistributions() && ($user->role !== 'user' || ! $user->beneficiary_id))) {
-            Auth::logout();
+        if (
+            ! $user->canSignIn()
+            || $user->role === 'super_admin'
+            || (
+                ! $user->canRecordDistributions()
+                && ($user->role !== 'user' || ! $user->beneficiary_id)
+            )
+        ) {
             throw ValidationException::withMessages([
-                'beneficiary_no' => ['This account is not permitted to sign in through the mobile app.'],
+                'beneficiary_no' => [
+                    'This account is not permitted to sign in through the mobile app.',
+                ],
             ]);
         }
 
-        if (in_array($user->role, ['admin', 'staff', 'volunteer'], true) && $user->mfa_enabled_at) {
-            if (empty($validated['mfa_code']) || ! $this->verifyMfaCode($user, $validated['mfa_code'])) {
-                Auth::logout();
+
+
+        if (
+            in_array($user->role, ['admin', 'staff', 'volunteer'], true)
+            && $user->mfa_enabled_at
+        ) {
+            if (
+                empty($validated['mfa_code'])
+                || ! $this->verifyMfaCode($user, $validated['mfa_code'])
+            ) {
+
 
                 return response()->json([
                     'success' => false,
                     'message' => 'A valid authenticator or unused recovery code is required.',
-                    'errors' => ['mfa_code' => ['Enter your current authenticator code or an unused recovery code.']],
+                    'errors' => [
+                        'mfa_code' => [
+                            'Enter your current authenticator code or an unused recovery code.',
+                        ],
+                    ],
                 ], 422);
             }
         }
 
-        if ($user->role === 'user' && ! $user->password_changed) {
-            $user->password_changed = true;
-            $user->save();
-        }
+        /*
+         * IMPORTANT:
+         * Never automatically set password_changed to true during login.
+         * A beneficiary must explicitly change their temporary password.
+         */
+        $requiresPasswordChange = $this->requiresPasswordChange($user);
 
         $token = $user->createToken('mobile-app-token')->plainTextToken;
 
@@ -84,11 +117,15 @@ class AuthController extends Controller
                     'username' => $user->username,
                     'beneficiary_no' => $user->beneficiary?->beneficiary_no ?? $user->email,
                     'password_changed' => (bool) $user->password_changed,
-                    'requires_password_change' => false,
+                    'requires_password_change' => $requiresPasswordChange,
                     'role' => $user->role,
                 ],
-                'next_action' => 'open_dashboard',
-                'next_screen' => null,
+                'next_action' => $requiresPasswordChange
+                    ? 'change_password'
+                    : 'open_dashboard',
+                'next_screen' => $requiresPasswordChange
+                    ? 'change-password'
+                    : null,
                 'password_change_endpoint' => '/api/auth/change-password',
                 'token' => $token,
                 'token_type' => 'Bearer',
@@ -96,9 +133,22 @@ class AuthController extends Controller
         ]);
     }
 
-    public function logout(Request $request)
+      public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        $plainTextToken = $request->bearerToken();
+
+        if ($user && $plainTextToken) {
+            $token = PersonalAccessToken::findToken($plainTextToken);
+
+            if (
+                $token
+                && $token->tokenable_id === $user->getKey()
+                && $token->tokenable_type === $user->getMorphClass()
+            ) {
+                $token->delete();
+            }
+        }
 
         return response()->json([
             'success' => true,
@@ -110,19 +160,26 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
+        $requiresPasswordChange = $this->requiresPasswordChange($user);
+
         return response()->json([
             'success' => true,
             'data' => [
                 'user' => [
                     'id' => $user->id,
+                    'beneficiary_id' => $user->beneficiary_id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'username' => $user->username,
                     'beneficiary_no' => $user->beneficiary?->beneficiary_no ?? $user->email,
                     'password_changed' => (bool) $user->password_changed,
-                    'requires_password_change' => false,
-                    'next_action' => 'open_dashboard',
-                    'next_screen' => null,
+                    'requires_password_change' => $requiresPasswordChange,
+                    'next_action' => $requiresPasswordChange
+                        ? 'change_password'
+                        : 'open_dashboard',
+                    'next_screen' => $requiresPasswordChange
+                        ? 'change-password'
+                        : null,
                     'role' => $user->role,
                 ],
             ],
@@ -133,14 +190,21 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password' => ['required', 'string', 'confirmed', Password::min(12)->mixedCase()->numbers()],
+            'new_password' => [
+                'required',
+                'string',
+                'confirmed',
+                Password::min(12)->mixedCase()->numbers(),
+            ],
         ]);
 
         $user = $request->user();
 
-        if (!\Illuminate\Support\Facades\Hash::check($validated['current_password'], $user->password)) {
+        if (! Hash::check($validated['current_password'], $user->password)) {
             throw ValidationException::withMessages([
-                'current_password' => ['Your current password is incorrect.'],
+                'current_password' => [
+                    'Your current password is incorrect.',
+                ],
             ]);
         }
 
@@ -148,33 +212,58 @@ class AuthController extends Controller
         $user->password_changed = true;
         $user->save();
 
+        // Preserve the current session token but revoke other tokens.
         $currentAccessToken = $user->currentAccessToken();
+
         $currentTokenId = $currentAccessToken instanceof PersonalAccessToken
             ? $currentAccessToken->getKey()
             : null;
+
         $user->tokens()
-            ->when($currentTokenId, fn ($tokens) => $tokens->where('id', '!=', $currentTokenId))
+            ->when(
+                $currentTokenId,
+                fn ($tokens) => $tokens->where('id', '!=', $currentTokenId)
+            )
             ->delete();
 
         return response()->json([
             'success' => true,
             'message' => 'Password changed successfully.',
+            'data' => [
+                'password_changed' => true,
+                'requires_password_change' => false,
+                'next_action' => 'open_dashboard',
+                'next_screen' => null,
+            ],
         ]);
     }
 
-    private function verifyMfaCode(\App\Models\User $user, string $code): bool
+    /**
+     * Determine whether a beneficiary must change their temporary password.
+     */
+    private function requiresPasswordChange(User $user): bool
+    {
+        return $user->role === 'user'
+            && ! (bool) $user->password_changed;
+    }
+
+    private function verifyMfaCode(User $user, string $code): bool
     {
         $code = strtoupper(preg_replace('/[\s-]+/', '', $code));
+
         if (Totp::verify((string) $user->mfa_secret, $code)) {
             return true;
         }
 
         $codes = $user->mfa_recovery_codes ?? [];
+
         foreach ($codes as $index => $hash) {
             if (Hash::check($code, $hash)) {
                 unset($codes[$index]);
+
                 $user->mfa_recovery_codes = array_values($codes);
                 $user->save();
+
                 return true;
             }
         }
