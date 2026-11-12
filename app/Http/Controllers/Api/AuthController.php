@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
@@ -31,26 +32,20 @@ class AuthController extends Controller
         ]);
 
         $identifier = trim((string) ($validated['username'] ?? $validated['beneficiary_no']));
-        $authenticated = Auth::attempt([
-            'username' => Str::lower($identifier),
-            'password' => $validated['password'],
-        ]);
+        $user = User::query()->whereRaw('LOWER(username) = ?', [Str::lower($identifier)])->first();
 
-        if (! $authenticated) {
+        if (! $user) {
             $legacyIdentifier = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? $identifier : Str::upper($identifier);
-            $authenticated = Auth::attempt([
-                'email' => $legacyIdentifier,
-                'password' => $validated['password'],
-            ]);
+            $user = User::query()->whereRaw('LOWER(email) = ?', [Str::lower($legacyIdentifier)])->first();
         }
 
-        if (! $authenticated) {
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'beneficiary_no' => ['The username, beneficiary code, or password is incorrect.'],
             ]);
         }
 
-        $user = Auth::user();
+        Auth::login($user);
         if (!$user || ! $user->canSignIn() || $user->role === 'super_admin' || (! $user->canRecordDistributions() && ($user->role !== 'user' || ! $user->beneficiary_id))) {
             Auth::logout();
             throw ValidationException::withMessages([

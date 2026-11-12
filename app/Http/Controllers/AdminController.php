@@ -1610,6 +1610,7 @@ protected function generateUniqueQrToken(): string
 
     public function storeUser(Request $request)
     {
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
@@ -1718,6 +1719,7 @@ protected function generateUniqueQrToken(): string
             return redirect()->route('admin.users')->with('success', 'Beneficiary account updated successfully.');
         }
 
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $id],

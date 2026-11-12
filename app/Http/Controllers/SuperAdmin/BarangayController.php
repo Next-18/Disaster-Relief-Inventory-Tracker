@@ -24,6 +24,7 @@ class BarangayController extends Controller
 
     public function store(Request $request)
     {
+        $request->merge(['admin_email' => mb_strtolower(trim((string) $request->input('admin_email')))]);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('barangays')->where(fn ($query) => $query->where('municipality', $request->input('municipality'))->where('province', $request->input('province')))],
             'municipality' => ['required', 'string', 'max:255'],

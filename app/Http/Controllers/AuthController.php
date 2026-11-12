@@ -99,24 +99,19 @@ class AuthController extends Controller
         $credentials = $request->validate(['email' => ['required'], 'password' => ['required', 'string']]);
         $identifier = trim((string) $credentials['email']);
         $remember = $request->boolean('remember');
-        $authenticated = false;
+        $user = null;
 
         if (! filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
-            $authenticated = Auth::attempt([
-                'username' => Str::lower($identifier),
-                'password' => $credentials['password'],
-            ], $remember);
+            $user = User::query()->whereRaw('LOWER(username) = ?', [Str::lower($identifier)])->first();
         }
 
-        if (! $authenticated) {
+        if (! $user) {
             $emailOrCode = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? $identifier : Str::upper($identifier);
-            $authenticated = Auth::attempt([
-                'email' => $emailOrCode,
-                'password' => $credentials['password'],
-            ], $remember);
+            $user = User::query()->whereRaw('LOWER(email) = ?', [Str::lower($emailOrCode)])->first();
         }
 
-        if ($authenticated) {
+        if ($user && Hash::check($credentials['password'], $user->password)) {
+            Auth::login($user, $remember);
             $user = Auth::user();
             if (! $user->canSignIn() || ! $user->canRecordDistributions()) {
                 Auth::logout();
