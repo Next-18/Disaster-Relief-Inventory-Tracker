@@ -42,33 +42,51 @@ class AdminInertiaPagesTest extends TestCase
             ->assertSessionHas('success', 'Beneficiary added successfully.');
 
         $beneficiary = Beneficiary::where('full_name', 'Mia Santos')->firstOrFail();
-        $this->assertDatabaseHas('beneficiaries', ['id' => $beneficiary->id, 'status' => 'Active']);
+
+        $this->assertDatabaseHas('beneficiaries', [
+            'id' => $beneficiary->id,
+            'status' => 'Active',
+        ]);
 
         $this->from(route('admin.beneficiaries'))
-            ->put(route('admin.beneficiaries.update', $beneficiary->id), [...$attributes, 'status' => 'Inactive'])
+            ->put(
+                route('admin.beneficiaries.update', $beneficiary->id),
+                [...$attributes, 'status' => 'Inactive']
+            )
             ->assertRedirect(route('admin.beneficiaries'));
-        $this->assertDatabaseHas('beneficiaries', ['id' => $beneficiary->id, 'status' => 'Inactive']);
+
+        $this->assertDatabaseHas('beneficiaries', [
+            'id' => $beneficiary->id,
+            'status' => 'Inactive',
+        ]);
 
         $this->from(route('admin.beneficiaries'))
             ->delete(route('admin.beneficiaries.delete', $beneficiary->id))
             ->assertRedirect(route('admin.beneficiaries'));
-        $this->assertDatabaseMissing('beneficiaries', ['id' => $beneficiary->id]);
+
+        $this->assertDatabaseMissing('beneficiaries', [
+            'id' => $beneficiary->id,
+        ]);
     }
 
     public function test_distribution_page_uses_inertia_and_keeps_create_update_cancel_routes_working(): void
     {
         $user = User::factory()->admin()->create();
+
         $this->actingAs($user);
+
         $beneficiary = Beneficiary::create([
             'beneficiary_no' => 'BEN-4001',
             'full_name' => 'Ava Rivera',
             'status' => 'Active',
         ]);
+
         $package = ReliefPackage::create([
             'package_name' => 'Family essentials',
             'category' => 'General',
             'status' => 'Available',
         ]);
+
         $item = InventoryItem::create([
             'item_name' => 'Rice',
             'category' => 'Food',
@@ -76,7 +94,11 @@ class AdminInertiaPagesTest extends TestCase
             'unit' => 'bags',
             'minimum_stock' => 2,
         ]);
-        $package->inventoryItems()->attach($item->id, ['quantity_per_package' => 1]);
+
+        $package->inventoryItems()->attach(
+            $item->id,
+            ['quantity_per_package' => 1]
+        );
 
         $this->get(route('admin.distribution'))
             ->assertOk()
@@ -91,6 +113,7 @@ class AdminInertiaPagesTest extends TestCase
             'package_id' => $package->id,
             'start_date' => today()->toDateString(),
             'deadline' => today()->addDay()->toDateString(),
+            'claim_venue' => 'Barangay Hall',
             'notes' => 'Initial delivery',
         ];
 
@@ -98,23 +121,50 @@ class AdminInertiaPagesTest extends TestCase
             ->withHeader('X-Inertia', 'true')
             ->post(route('admin.distribution.store'), $attributes)
             ->assertRedirect(route('admin.distribution'))
-            ->assertSessionHas('success', '1 distribution record(s) created successfully.');
+            ->assertSessionHas(
+                'success',
+                '1 distribution record(s) created successfully.'
+            );
 
         $distribution = Distribution::firstOrFail();
-        $this->assertSame('Pending', $distribution->status);
-        $this->assertSame(today()->toDateString(), $distribution->start_date->toDateString());
-        $this->assertSame(today()->addDay()->toDateString(), $distribution->deadline->toDateString());
 
-        $updatedAttributes = [...$attributes, 'deadline' => today()->addDays(2)->toDateString()];
-        $this->put(route('admin.distribution.update', $distribution->id), $updatedAttributes)
-            ->assertRedirect(route('admin.distribution'));
-        $distribution->refresh();
         $this->assertSame('Pending', $distribution->status);
-        $this->assertSame(today()->addDays(2)->toDateString(), $distribution->deadline->toDateString());
+        $this->assertSame(
+            today()->toDateString(),
+            $distribution->start_date->toDateString()
+        );
+        $this->assertSame(
+            today()->addDay()->toDateString(),
+            $distribution->deadline->toDateString()
+        );
+        $this->assertSame('Barangay Hall', $distribution->claim_venue);
+
+        $updatedAttributes = [
+            ...$attributes,
+            'deadline' => today()->addDays(2)->toDateString(),
+        ];
+
+        $this->put(
+            route('admin.distribution.update', $distribution->id),
+            $updatedAttributes
+        )->assertRedirect(route('admin.distribution'));
+
+        $distribution->refresh();
+
+        $this->assertSame('Pending', $distribution->status);
+        $this->assertSame(
+            today()->addDays(2)->toDateString(),
+            $distribution->deadline->toDateString()
+        );
 
         $this->delete(route('admin.distribution.delete', $distribution->id))
             ->assertRedirect(route('admin.distribution'));
-        $this->assertDatabaseHas('distributions', ['id' => $distribution->id, 'status' => 'Cancelled']);
+
+        $this->assertDatabaseHas('distributions', [
+            'id' => $distribution->id,
+            'status' => 'Cancelled',
+        ]);
+
         $this->assertSame(10, $item->fresh()->quantity);
     }
 
@@ -122,6 +172,7 @@ class AdminInertiaPagesTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $staff = User::factory()->create(['role' => 'staff']);
+
         $this->actingAs($admin);
 
         $beneficiary = Beneficiary::create([
@@ -129,11 +180,13 @@ class AdminInertiaPagesTest extends TestCase
             'full_name' => 'Ana Santos',
             'status' => 'Active',
         ]);
+
         $package = ReliefPackage::create([
             'package_name' => 'Food pack',
             'category' => 'Food',
             'status' => 'Available',
         ]);
+
         $distribution = Distribution::create([
             'beneficiary_id' => $beneficiary->id,
             'package_id' => $package->id,
@@ -145,34 +198,49 @@ class AdminInertiaPagesTest extends TestCase
         $this->delete(route('admin.beneficiaries.delete', $beneficiary->id))
             ->assertRedirect()
             ->assertSessionHas('error');
+
         $this->from(route('admin.users'))
             ->delete(route('admin.users.delete', $staff->id))
             ->assertRedirect(route('admin.users'))
             ->assertSessionHas('error');
 
-        $this->assertDatabaseHas('beneficiaries', ['id' => $beneficiary->id]);
-        $this->assertDatabaseHas('users', ['id' => $staff->id]);
-        $this->assertDatabaseHas('distributions', ['id' => $distribution->id, 'distributed_by' => $staff->id]);
+        $this->assertDatabaseHas('beneficiaries', [
+            'id' => $beneficiary->id,
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $staff->id,
+        ]);
+
+        $this->assertDatabaseHas('distributions', [
+            'id' => $distribution->id,
+            'distributed_by' => $staff->id,
+        ]);
     }
 
     public function test_user_role_requires_a_unique_linked_beneficiary(): void
     {
         $this->actingAs(User::factory()->admin()->create());
+
         $beneficiary = Beneficiary::create([
             'beneficiary_no' => 'BEN-4988',
             'full_name' => 'Lia Santos',
             'status' => 'Active',
         ]);
+
         $beneficiaryUser = User::factory()->create([
             'role' => 'user',
             'beneficiary_id' => $beneficiary->id,
         ]);
+
         $unlinkedBeneficiary = Beneficiary::create([
             'beneficiary_no' => 'BEN-4989',
             'full_name' => 'Mia Santos',
             'status' => 'Active',
         ]);
+
         $staff = User::factory()->create(['role' => 'staff']);
+
         $staffAttributes = [
             'name' => $staff->name,
             'email' => $staff->email,
@@ -197,7 +265,16 @@ class AdminInertiaPagesTest extends TestCase
             ])
             ->assertRedirect(route('admin.users'));
 
-        $this->assertDatabaseHas('users', ['id' => $staff->id, 'role' => 'user', 'beneficiary_id' => $unlinkedBeneficiary->id]);
-        $this->assertDatabaseHas('users', ['id' => $beneficiaryUser->id, 'role' => 'user', 'beneficiary_id' => $beneficiary->id]);
+        $this->assertDatabaseHas('users', [
+            'id' => $staff->id,
+            'role' => 'user',
+            'beneficiary_id' => $unlinkedBeneficiary->id,
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $beneficiaryUser->id,
+            'role' => 'user',
+            'beneficiary_id' => $beneficiary->id,
+        ]);
     }
 }

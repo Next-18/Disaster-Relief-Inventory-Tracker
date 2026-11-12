@@ -2,21 +2,36 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBarangay;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use App\Models\Concerns\BelongsToBarangay;
 
 class SupportTicket extends Model
 {
     use BelongsToBarangay;
+
     protected $fillable = [
-        'barangay_id', 'reporter_id', 'reporter_name', 'reporter_role', 'title', 'type', 'priority', 'description', 'status',
-        'recipient_role', 'admin_response', 'handled_by', 'resolved_at',
+        'barangay_id',
+        'reporter_id',
+        'reporter_name',
+        'reporter_role',
+        'title',
+        'type',
+        'priority',
+        'description',
+        'status',
+        'recipient_role',
+        'admin_response',
+        'handled_by',
+        'resolved_at',
+        'offline_request_id',
     ];
 
     protected function casts(): array
     {
-        return ['resolved_at' => 'datetime'];
+        return [
+            'resolved_at' => 'datetime',
+        ];
     }
 
     public function reporter(): BelongsTo
