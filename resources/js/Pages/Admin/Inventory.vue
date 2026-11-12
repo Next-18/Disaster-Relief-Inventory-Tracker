@@ -17,6 +17,7 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
     canManageInventory: { type: Boolean, default: false },
     canUpdateStock: { type: Boolean, default: false },
+    isSuperAdmin: { type: Boolean, default: false },
 });
 
 const page = usePage();
@@ -152,7 +153,7 @@ function formatDate(value) {
         <div class="panel-heading">
             <div><h3>Stock list</h3><p>{{ items.total ? `Showing ${items.from}–${items.to} of ${items.total} matching records` : 'No records to display' }}</p></div>
             <form class="inventory-filter-form" role="search" @submit.prevent="visitFilters()">
-                <input v-model="filters.search" type="search" class="table-search inventory-search" placeholder="Search name, category, unit" aria-label="Search inventory">
+                <input v-model="filters.search" type="search" class="table-search inventory-search" :placeholder="isSuperAdmin ? 'Search item, category, or barangay' : 'Search name, category, unit'" aria-label="Search inventory">
                 <select v-model="filters.stock_status" class="filter-select inventory-select" aria-label="Filter by stock status" @change="visitFilters()"><option value="all">All stock</option><option value="low">Low stock</option><option value="available">Above minimum</option></select>
                 <select v-model.number="filters.per_page" class="filter-select inventory-select" aria-label="Rows per page" @change="visitFilters()"><option :value="10">10 / page</option><option :value="25">25 / page</option><option :value="50">50 / page</option></select>
                 <button type="submit" class="action-btn">Search</button>
@@ -160,10 +161,11 @@ function formatDate(value) {
             </form>
         </div>
         <div class="table-wrap"><table class="record-table inventory-table">
-            <thead><tr><th>ITEM</th><th>CATEGORY</th><th>AVAILABLE STOCK</th><th>MINIMUM</th><th>STATUS</th><th>{{ canUpdateStock ? 'ACTIONS' : 'STATUS' }}</th></tr></thead>
+            <thead><tr><th>ITEM</th><th v-if="isSuperAdmin">BARANGAY / MUNICIPALITY / PROVINCE</th><th>CATEGORY</th><th>AVAILABLE STOCK</th><th>MINIMUM</th><th>STATUS</th><th>{{ canUpdateStock ? 'ACTIONS' : 'STATUS' }}</th></tr></thead>
             <tbody>
                 <tr v-for="item in rows" :key="item.id" :class="{ 'inventory-row-low': item.status === 'Low Stock' }">
                     <td data-label="Item"><b>{{ item.item_name }}</b><small>Last updated {{ formatDate(item.updated_at) }}</small></td>
+                    <td v-if="isSuperAdmin" data-label="Location" class="inventory-location"><b>{{ item.barangay?.name || 'Unassigned' }}</b><small>{{ [item.barangay?.municipality, item.barangay?.province].filter(Boolean).join(', ') || 'Location not recorded' }}</small></td>
                     <td data-label="Category">{{ item.category }}</td>
                     <td data-label="On hand"><b>{{ Number(item.quantity).toLocaleString() }}</b> {{ item.unit }}</td>
                     <td data-label="Minimum">{{ Number(item.minimum_stock).toLocaleString() }} {{ item.unit }}</td>
@@ -174,7 +176,7 @@ function formatDate(value) {
                         <span v-else>View only</span>
                     </td>
                 </tr>
-                <tr v-if="!rows.length"><td colspan="6" class="empty-cell">{{ filters.search || filters.stock_status !== 'all' ? 'No inventory items match these filters.' : 'No inventory items yet.' }} <button v-if="filters.search || filters.stock_status !== 'all'" type="button" class="filter-clear" @click="filters.search = ''; filters.stock_status = 'all'; visitFilters()">Clear filters</button></td></tr>
+                <tr v-if="!rows.length"><td :colspan="isSuperAdmin ? 7 : 6" class="empty-cell">{{ filters.search || filters.stock_status !== 'all' ? 'No inventory items match these filters.' : 'No inventory items yet.' }} <button v-if="filters.search || filters.stock_status !== 'all'" type="button" class="filter-clear" @click="filters.search = ''; filters.stock_status = 'all'; visitFilters()">Clear filters</button></td></tr>
             </tbody>
         </table></div>
         <InertiaPagination :links="items.links" :show="items.last_page > 1" />
@@ -204,6 +206,9 @@ function formatDate(value) {
 </template>
 
 <style scoped>
+.inventory-location b, .inventory-location small { display: block; }
+.inventory-location b { color: #233d5b; font-size: 11px; font-weight: 650; }
+.inventory-location small { margin-top: 3px; color: #8290a3; font-size: 10px; }
 .form-row-single {
     grid-template-columns: minmax(0, 1fr);
 }

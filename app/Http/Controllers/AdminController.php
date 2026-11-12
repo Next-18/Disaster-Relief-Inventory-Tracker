@@ -347,7 +347,7 @@ class AdminController extends Controller
 
     public function inventory(Request $request)
     {
-        $query = InventoryItem::query();
+        $query = InventoryItem::query()->with('barangay:id,name,municipality,province');
         $search = trim((string) $request->input('search', ''));
         $stockStatus = $request->input('stock_status', 'all');
 
@@ -356,7 +356,13 @@ class AdminController extends Controller
                 $items->where('item_name', 'like', "%{$search}%")
                     ->orWhere('category', 'like', "%{$search}%")
                     ->orWhere('unit', 'like', "%{$search}%")
-                    ->orWhere('status', 'like', "%{$search}%");
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhereHas('barangay', function ($barangays) use ($search) {
+                        $like = "%{$search}%";
+                        $barangays->where('name', 'like', $like)
+                            ->orWhere('municipality', 'like', $like)
+                            ->orWhere('province', 'like', $like);
+                    });
             });
         }
 
@@ -391,6 +397,7 @@ class AdminController extends Controller
             'filters' => $request->only(['search', 'stock_status', 'per_page']),
             'canManageInventory' => $request->user()->canManageBarangay(),
             'canUpdateStock' => $request->user()->canReleasePackages(),
+            'isSuperAdmin' => $request->user()->role === 'super_admin',
         ]);
     }
 
