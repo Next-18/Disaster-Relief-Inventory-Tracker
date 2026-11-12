@@ -56,7 +56,13 @@ class AdminController extends Controller
                   ->orWhere('address', 'like', "%{$search}%")
                   ->orWhere('contact_number', 'like', "%{$search}%")
                   ->orWhere('priority_type', 'like', "%{$search}%")
-                  ->orWhere('status', 'like', "%{$search}%");
+                  ->orWhere('status', 'like', "%{$search}%")
+                  ->orWhereHas('barangay', function ($barangays) use ($search) {
+                      $like = "%{$search}%";
+                      $barangays->where('name', 'like', $like)
+                          ->orWhere('municipality', 'like', $like)
+                          ->orWhere('province', 'like', $like);
+                  });
             });
         }
 
@@ -77,7 +83,7 @@ class AdminController extends Controller
 
     public function beneficiaries(Request $request)
     {
-        $query = Beneficiary::query();
+        $query = Beneficiary::query()->with('barangay:id,name,municipality,province');
         $this->applyBeneficiaryFilters($query, $request);
 
         $sortField = $request->get('sort', 'created_at');
@@ -109,6 +115,7 @@ class AdminController extends Controller
             'activeBeneficiaries' => $activeBeneficiaries,
             'inactiveBeneficiaries' => $inactiveBeneficiaries,
             'priorityHouseholds' => $priorityHouseholds,
+            'isSuperAdmin' => $request->user()->role === 'super_admin',
             'filters' => $request->only(['search', 'status', 'priority_type', 'priority_only', 'per_page', 'sort', 'direction']),
         ]);
     }

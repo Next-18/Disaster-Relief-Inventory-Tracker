@@ -14,6 +14,7 @@ const props = defineProps({
     activeBeneficiaries: { type: Number, required: true },
     inactiveBeneficiaries: { type: Number, required: true },
     priorityHouseholds: { type: Number, required: true },
+    isSuperAdmin: { type: Boolean, default: false },
     filters: { type: Object, default: () => ({}) },
 });
 
@@ -486,6 +487,7 @@ function priorityClass(priority) {
                 <thead><tr>
                     <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'full_name' }" @click="sortBy('full_name')">Beneficiary <span class="sort-indicator">{{ filters.sort === 'full_name' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
                     <th>Contact</th>
+                    <th v-if="isSuperAdmin">Barangay / Municipality / Province</th>
                     <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'household_size' }" @click="sortBy('household_size')">Household <span class="sort-indicator">{{ filters.sort === 'household_size' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
                     <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'priority_type' }" @click="sortBy('priority_type')">Priority <span class="sort-indicator">{{ filters.sort === 'priority_type' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
                     <th><button type="button" class="sort-link" :class="{ 'sort-active': filters.sort === 'status' }" @click="sortBy('status')">Status <span class="sort-indicator">{{ filters.sort === 'status' ? (filters.direction === 'asc' ? '↑' : '↓') : '↕' }}</span></button></th>
@@ -495,6 +497,7 @@ function priorityClass(priority) {
                     <tr v-for="beneficiary in rows" :key="beneficiary.id" class="beneficiary-row" :class="{ selected: selectedIds.includes(beneficiary.id) }">
                         <td><button type="button" class="beneficiary-name-btn view-beneficiary-btn" @click="showDetails(beneficiary)"><div class="beneficiary-cell"><div class="avatar" :class="`a${(beneficiary.id % 4) + 1}`">{{ beneficiary.full_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() }}</div><div><b>{{ beneficiary.full_name }}</b><small>{{ beneficiary.beneficiary_no }} — {{ beneficiary.address || 'No address listed' }}</small></div></div></button></td>
                         <td>{{ beneficiary.contact_number || '—' }}</td>
+                        <td v-if="isSuperAdmin" class="beneficiary-location"><strong>{{ beneficiary.barangay?.name || 'Unassigned' }}</strong><small>{{ [beneficiary.barangay?.municipality, beneficiary.barangay?.province].filter(Boolean).join(', ') || 'Location not recorded' }}</small></td>
                         <td>{{ beneficiary.household_size ?? '—' }} members</td>
                         <td><span class="tag" :class="priorityClass(beneficiary.priority_type)">{{ beneficiary.priority_type }}</span></td>
                         <td><span class="tag" :class="beneficiary.status === 'Active' ? 'success' : 'warning'">{{ beneficiary.status }}</span></td>
@@ -502,7 +505,7 @@ function priorityClass(priority) {
                             <button type="button" class="row-actions-btn" :aria-expanded="rowMenuId === beneficiary.id" :aria-label="`Actions for ${beneficiary.full_name}`" @click.stop="toggleRowMenu($event, beneficiary.id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
                         </div></td>
                     </tr>
-                    <tr v-if="!rows.length"><td colspan="6"><div class="empty-state"><div class="empty-state-icon">♟</div><h4>{{ activeFilters ? 'No matches found' : 'No beneficiaries yet' }}</h4><p>{{ activeFilters ? 'Try adjusting your search or filters.' : 'Add your first household record to get started.' }}</p><button v-if="activeFilters" type="button" class="primary-action" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear filters</button><button v-else type="button" class="primary-action" @click="openAddModal">Add beneficiary</button></div></td></tr>
+                    <tr v-if="!rows.length"><td :colspan="isSuperAdmin ? 7 : 6"><div class="empty-state"><div class="empty-state-icon">♟</div><h4>{{ activeFilters ? 'No matches found' : 'No beneficiaries yet' }}</h4><p>{{ activeFilters ? 'Try adjusting your search or filters.' : 'Add your first household record to get started.' }}</p><button v-if="activeFilters" type="button" class="primary-action" @click="Object.assign(filters, { search: '', status: 'all', priority_type: 'all', priority_only: false }); visitFilters()">Clear filters</button><button v-else type="button" class="primary-action" @click="openAddModal">Add beneficiary</button></div></td></tr>
                 </tbody>
             </table>
         </div>
@@ -774,6 +777,9 @@ function priorityClass(priority) {
 .beneficiaries-table { min-width: 700px; }
 .beneficiaries-table th { padding: 12px 16px; background: #f9fafc; }
 .beneficiaries-table td { padding: 14px 16px; }
+.beneficiary-location strong, .beneficiary-location small { display: block; }
+.beneficiary-location strong { color: #233d5b; font-size: 11px; font-weight: 650; }
+.beneficiary-location small { margin-top: 3px; color: #8290a3; font-size: 10px; }
 .beneficiaries-table .sort-link {
     appearance: none;
     padding: 3px 0;
