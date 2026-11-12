@@ -13,6 +13,14 @@ const props = defineProps({
 
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
+const perPage = ref(Number(props.users.per_page ?? 10));
+
+function updatePerPage() {
+    router.get(routes.value.users, { per_page: perPage.value }, {
+        preserveScroll: true,
+        replace: true,
+    });
+}
 
 const form = useForm({
     name: '',
@@ -114,8 +122,20 @@ function openCreateModal() {
         <div class="panel-heading">
             <div>
                 <h3>System users</h3>
-                <p>{{ users.total }} total user accounts</p>
+                <p>
+                    {{ users.total === 0 ? '0' : `${users.from}–${users.to}` }} of {{ users.total }} user accounts
+                </p>
             </div>
+            <label class="users-page-size">
+                <span>Show</span>
+                <select v-model.number="perPage" class="filter-select" aria-label="User accounts per page" @change="updatePerPage">
+                    <option :value="10">10</option>
+                    <option :value="25">25</option>
+                    <option :value="50">50</option>
+                    <option :value="100">100</option>
+                </select>
+                <span>per page</span>
+            </label>
         </div>
 
         <div class="table-wrap">
@@ -178,7 +198,7 @@ function openCreateModal() {
             </table>
         </div>
 
-        <InertiaPagination :pagination="users" />
+        <InertiaPagination :links="users.links" :show="users.last_page > 1" />
     </div>
 
     <dialog class="form-modal" id="user-modal">
@@ -244,3 +264,20 @@ function openCreateModal() {
         </form>
     </dialog>
 </template>
+
+<style scoped>
+.users-page-size {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #5f6f84;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+    .users-page-size {
+        flex-wrap: wrap;
+    }
+}
+</style>

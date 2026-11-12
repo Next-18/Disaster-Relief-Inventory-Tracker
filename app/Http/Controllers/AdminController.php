@@ -1629,7 +1629,16 @@ protected function generateUniqueQrToken(): string
 
     public function users()
     {
-        $users = $this->usersInCurrentBarangay()->with('beneficiary')->latest()->paginate(10);
+        $perPage = (int) request()->query('per_page', 10);
+        if (! in_array($perPage, [10, 25, 50, 100], true)) {
+            $perPage = 10;
+        }
+
+        $users = $this->usersInCurrentBarangay()
+            ->with('beneficiary')
+            ->latest()
+            ->paginate($perPage)
+            ->withQueryString();
 
         return inertia('Admin/Users', [
             'users' => $users
