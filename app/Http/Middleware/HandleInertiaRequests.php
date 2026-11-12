@@ -90,7 +90,7 @@ class HandleInertiaRequests extends Middleware
                 'register' => route('register'),
                 'registerAttempt' => route('register.attempt'),
                 'logo' => asset('images/relief-tracker-logo-transparent.png'),
-                'logoIcon' => asset('images/relief-tracker-logo.jpg'),
+                'logoIcon' => asset('images/relief-tracker-logo-transparent.png'),
             ],
         ];
     }

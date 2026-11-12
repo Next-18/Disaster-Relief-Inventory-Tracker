@@ -43,7 +43,7 @@ body {
 }
 
 .brand { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; padding: 0 14px 32px; color: var(--admin-ink); text-decoration: none; font-size: 18px; font-weight: 750; letter-spacing: -.02em; line-height: 1.08; }
-.brand-logo { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; object-position: 49% center; background: #fff; }
+.brand-logo { width: 42px; height: 42px; border-radius: 8px; object-fit: contain; object-position: center; background: transparent; }
 .sidebar-groups { flex: 0 0 auto; border-top: 1px solid var(--admin-line); padding-top: 10px; }
 .sidebar-group + .sidebar-group { margin-top: 6px; padding-top: 7px; border-top: 1px solid #e8e7e2; }
 .sidebar-group-title { margin: 0; padding: 4px 14px; color: #66736b; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
