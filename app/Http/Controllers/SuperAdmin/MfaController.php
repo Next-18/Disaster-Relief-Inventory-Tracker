@@ -73,9 +73,17 @@ class MfaController extends Controller
         $request->session()->regenerate();
         $request->session()->put('super_admin_mfa_verified_user_id', $user->id);
 
-        return $wasSetup
-            ? redirect()->route('admin.settings')
-            : redirect()->intended(route('super-admin.barangays'));
+        if ($wasSetup) {
+            return redirect()->route('admin.settings');
+        }
+
+        $destination = match ($user->role) {
+            'super_admin' => 'super-admin.barangays',
+            'admin' => 'dashboard',
+            default => 'admin.distribution',
+        };
+
+        return redirect()->route($destination);
     }
 
     public function beginSettingsSetup(Request $request)
