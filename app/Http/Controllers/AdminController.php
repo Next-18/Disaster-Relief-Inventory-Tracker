@@ -181,7 +181,7 @@ class AdminController extends Controller
             report($exception);
 
             return back()->withInput()->withErrors([
-                'full_name' => 'The beneficiary or login account could not be created. Check that the record is not already registered, then try again.',
+                'full_name' => 'The beneficiary and login account could not be saved. Please try again, and contact support if the problem continues.',
             ]);
         }
 
@@ -1037,10 +1037,11 @@ class AdminController extends Controller
         ]);
     }
 
-   // Generate sequential beneficiary numbers: BEN-0001, BEN-0002, etc.
+   // Beneficiary numbers have a database-wide unique index, so sequence globally
+   // instead of restarting the number inside each barangay workspace.
 protected function generateNextBeneficiaryNumber(): string
 {
-    $highestNumber = Beneficiary::query()
+    $highestNumber = Beneficiary::withoutGlobalScope('barangay')
         ->where('beneficiary_no', 'like', 'BEN-%')
         ->pluck('beneficiary_no')
         ->map(function ($number) {
@@ -1747,8 +1748,7 @@ protected function generateUniqueQrToken(): string
 
         $user->update($data);
 
-        $beneficiaryName = $user->beneficiary ? $user->beneficiary->full_name : 'No beneficiary linked';
-        $this->logAudit('update', 'users', "Updated user account for: {$beneficiaryName}");
+        $this->logAudit('update', 'users', "Updated {$user->role} account: {$user->name} ({$user->email})");
 
         return redirect()->route('admin.users')->with('success', 'User account updated successfully.');
     }
