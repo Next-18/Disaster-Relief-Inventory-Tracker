@@ -89,7 +89,7 @@ class HandleInertiaRequests extends Middleware
                 'mfaDisable' => route('super-admin.mfa.disable'),
                 'register' => route('register'),
                 'registerAttempt' => route('register.attempt'),
-                'logo' => asset('images/relief-tracker-logo.jpg'),
+                'logo' => asset('images/relief-tracker-logo-transparent.png'),
                 'logoIcon' => asset('images/relief-tracker-logo.jpg'),
             ],
         ];

@@ -22,7 +22,9 @@
 .login-page .field:focus { border-color: #2177d8; box-shadow: 0 0 0 4px #e6f0ff; }
 .login-page .password-wrap { position: relative; }
 .login-page .password-wrap .field { padding-right: 52px; }
-.login-page .toggle { position: absolute; top: 1px; right: 3px; height: 49px; width: 45px; cursor: pointer; border: 0; color: #69809d; font-size: 18px; }
+.login-page .toggle { position: absolute; top: 1px; right: 1px; display: grid; place-items: center; height: 50px; width: 44px; padding: 0; cursor: pointer; border: 0; border-radius: 0 11px 11px 0; background: transparent; color: #69809d; font-size: 18px; }
+.login-page .toggle:hover { background: #f4f7fb; color: #315f95; }
+.login-page .toggle:focus-visible { outline: 2px solid #2177d8; outline-offset: -3px; }
 .login-page .below { margin: 0 0 25px; display: flex; justify-content: space-between; gap: 10px; align-items: center; font-size: 13px; color: #64748b; }
 .login-page .remember { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .login-page .remember input { accent-color: #2377d9; width: 15px; height: 15px; }
