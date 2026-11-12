@@ -1520,7 +1520,14 @@ protected function generateUniqueQrToken(): string
         if ($request->isMethod('post')) {
             abort_unless($canManageSettings, 403);
             $rules = [];
-            if ($isSuperAdmin) {
+            $scope = $request->input('settings_scope', 'both');
+            $request->validate(['settings_scope' => ['sometimes', 'in:platform,location,both']]);
+            $savePlatform = $isSuperAdmin && in_array($scope, ['platform', 'both'], true);
+            $saveLocation = $barangayId && in_array($scope, ['location', 'both'], true);
+
+            abort_unless($savePlatform || $saveLocation, 403);
+
+            if ($savePlatform) {
                 $rules += [
                     'site_name' => ['required', 'string', 'max:255'],
                     'site_description' => ['nullable', 'string', 'max:500'],
@@ -1528,7 +1535,7 @@ protected function generateUniqueQrToken(): string
                     'contact_phone' => ['nullable', 'string', 'max:30'],
                 ];
             }
-            if ($barangayId) {
+            if ($saveLocation) {
                 $rules += [
                     'barangay_name' => ['required', 'string', 'max:255'],
                     'municipality' => ['required', 'string', 'max:255'],
@@ -1538,14 +1545,14 @@ protected function generateUniqueQrToken(): string
             abort_unless($rules !== [], 403);
             $data = $request->validate($rules);
 
-            if ($isSuperAdmin) {
+            if ($savePlatform) {
                 Setting::set('site_name', $data['site_name'], 'string', 'general', 'Name of the inventory tracker site');
                 Setting::set('site_description', $data['site_description'] ?? null, 'string', 'general', 'Site description');
                 Setting::set('contact_email', $data['contact_email'] ?? null, 'string', 'general', 'Contact email address');
                 Setting::set('contact_phone', $data['contact_phone'] ?? null, 'string', 'general', 'Contact phone number');
             }
 
-            if ($barangayId) {
+            if ($saveLocation) {
                 Barangay::query()->findOrFail($barangayId)->update([
                     'name' => trim($data['barangay_name']),
                     'municipality' => trim($data['municipality']),
@@ -1553,8 +1560,9 @@ protected function generateUniqueQrToken(): string
                 ]);
             }
 
-            $this->logAudit('update', 'settings', 'Updated site and location settings');
-            return redirect()->route('admin.settings')->with('success', 'Settings updated successfully.');
+            $scopeLabel = $savePlatform && $saveLocation ? 'platform and barangay settings' : ($savePlatform ? 'platform settings' : 'barangay location settings');
+            $this->logAudit('update', 'settings', 'Updated '.$scopeLabel);
+            return redirect()->route('admin.settings')->with('success', ucfirst($scopeLabel).' updated successfully.');
         }
 
         // Get current settings

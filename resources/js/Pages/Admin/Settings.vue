@@ -16,11 +16,13 @@ const props = defineProps({
 });
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
-const form = useForm({
+const platformForm = useForm({
     site_name: props.settings.site_name ?? '',
     site_description: props.settings.site_description ?? '',
     contact_email: props.settings.contact_email ?? '',
     contact_phone: props.settings.contact_phone ?? '',
+});
+const locationForm = useForm({
     barangay_name: props.settings.barangay_name ?? '',
     municipality: props.settings.municipality ?? '',
     province: props.settings.province ?? '',
@@ -30,19 +32,27 @@ const mfaForm = useForm({ current_password: '', code: '' });
 const mfaEnableForm = useForm({ code: '' });
 
 watch(() => props.settings, (settings) => {
-    Object.assign(form, {
+    Object.assign(platformForm, {
         site_name: settings.site_name ?? '',
         site_description: settings.site_description ?? '',
         contact_email: settings.contact_email ?? '',
         contact_phone: settings.contact_phone ?? '',
+    });
+    Object.assign(locationForm, {
         barangay_name: settings.barangay_name ?? '',
         municipality: settings.municipality ?? '',
         province: settings.province ?? '',
     });
 }, { deep: true });
 
-function saveSettings() {
-    form.post(routes.value.settings, { preserveScroll: true });
+function savePlatformSettings() {
+    platformForm.transform((data) => ({ ...data, settings_scope: 'platform' }))
+        .post(routes.value.settings, { preserveScroll: true });
+}
+
+function saveLocationSettings() {
+    locationForm.transform((data) => ({ ...data, settings_scope: 'location' }))
+        .post(routes.value.settings, { preserveScroll: true });
 }
 
 function updatePassword() {
@@ -68,31 +78,33 @@ function enableMfa() {
 
 <template>
     <section class="module-heading"><div><h2>Settings</h2><p v-if="!canManageSettings">Manage your account security and sign-in protection.</p><p v-else-if="isSuperAdmin && !hasBarangayWorkspace">Manage platform details. Select a barangay workspace to edit its location details.</p><p v-else>Configure {{ isSuperAdmin ? 'platform and barangay' : 'barangay' }} settings and account security.</p></div></section>
-    <form v-if="canManageSettings" class="settings-form" @submit.prevent="saveSettings">
-        <section v-if="isSuperAdmin" class="panel record-panel">
-            <div class="panel-heading"><div><h3>General Settings</h3><p>Basic site configuration and contact information</p></div></div>
-            <div class="settings-fields">
-                <label>Site Name<input v-model="form.site_name" type="text" required><small v-if="form.errors.site_name" class="field-error">{{ form.errors.site_name }}</small></label>
-                <label>Site Description<textarea v-model="form.site_description" rows="3"/><small v-if="form.errors.site_description" class="field-error">{{ form.errors.site_description }}</small></label>
-                <div class="settings-grid two-columns">
-                    <label>Contact Email<input v-model="form.contact_email" type="email"><small v-if="form.errors.contact_email" class="field-error">{{ form.errors.contact_email }}</small></label>
-                    <label>Contact Phone<input v-model="form.contact_phone" type="text"><small v-if="form.errors.contact_phone" class="field-error">{{ form.errors.contact_phone }}</small></label>
+    <div v-if="canManageSettings" class="settings-form">
+        <form v-if="isSuperAdmin" @submit.prevent="savePlatformSettings">
+            <section class="panel record-panel">
+                <div class="panel-heading"><div><h3>Platform Settings</h3><p>Site name, description, and platform contact details</p></div></div>
+                <div class="settings-fields">
+                    <label>Site Name<input v-model="platformForm.site_name" type="text" required><small v-if="platformForm.errors.site_name" class="field-error">{{ platformForm.errors.site_name }}</small></label>
+                    <label>Site Description<textarea v-model="platformForm.site_description" rows="3"/><small v-if="platformForm.errors.site_description" class="field-error">{{ platformForm.errors.site_description }}</small></label>
+                    <div class="settings-grid two-columns">
+                        <label>Contact Email<input v-model="platformForm.contact_email" type="email"><small v-if="platformForm.errors.contact_email" class="field-error">{{ platformForm.errors.contact_email }}</small></label>
+                        <label>Contact Phone<input v-model="platformForm.contact_phone" type="text"><small v-if="platformForm.errors.contact_phone" class="field-error">{{ platformForm.errors.contact_phone }}</small></label>
+                    </div>
+                    <div class="settings-save-row"><p>These details apply to the whole platform.</p><button class="primary-action" type="submit" :disabled="platformForm.processing">{{ platformForm.processing ? 'Saving...' : 'Save platform settings' }}</button></div>
                 </div>
-            </div>
-        </section>
-        <section v-if="hasBarangayWorkspace" class="panel record-panel">
-            <div class="panel-heading"><div><h3>Location Settings</h3><p>Geographic information for reports and documentation</p></div></div>
-            <div class="settings-fields settings-grid three-columns">
-                <label>Barangay Name<input v-model="form.barangay_name" type="text" required><small v-if="form.errors.barangay_name" class="field-error">{{ form.errors.barangay_name }}</small></label>
-                <label>Municipality<input v-model="form.municipality" type="text" required><small v-if="form.errors.municipality" class="field-error">{{ form.errors.municipality }}</small></label>
-                <label>Province<input v-model="form.province" type="text" required><small v-if="form.errors.province" class="field-error">{{ form.errors.province }}</small></label>
-            </div>
-        </section>
-        <section v-if="isSuperAdmin || hasBarangayWorkspace" class="settings-save-row">
-            <p>Changes apply to {{ isSuperAdmin && hasBarangayWorkspace ? 'platform and selected barangay' : (isSuperAdmin ? 'the platform' : 'your barangay') }}.</p>
-            <button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : 'Save settings' }}</button>
-        </section>
-    </form>
+            </section>
+        </form>
+        <form v-if="hasBarangayWorkspace" @submit.prevent="saveLocationSettings">
+            <section class="panel record-panel">
+                <div class="panel-heading"><div><h3>Barangay Location</h3><p>Geographic details for the currently selected workspace</p></div></div>
+                <div class="settings-fields settings-grid three-columns">
+                    <label>Barangay Name<input v-model="locationForm.barangay_name" type="text" required><small v-if="locationForm.errors.barangay_name" class="field-error">{{ locationForm.errors.barangay_name }}</small></label>
+                    <label>Municipality<input v-model="locationForm.municipality" type="text" required><small v-if="locationForm.errors.municipality" class="field-error">{{ locationForm.errors.municipality }}</small></label>
+                    <label>Province<input v-model="locationForm.province" type="text" required><small v-if="locationForm.errors.province" class="field-error">{{ locationForm.errors.province }}</small></label>
+                    <div class="settings-save-row settings-location-save"><p>Applies only to the selected barangay.</p><button class="primary-action" type="submit" :disabled="locationForm.processing">{{ locationForm.processing ? 'Saving...' : 'Save location settings' }}</button></div>
+                </div>
+            </section>
+        </form>
+    </div>
     <section class="panel record-panel security-panel">
         <div class="panel-heading"><div><h3>Account security</h3><p>Change your password and manage sign-in protection.</p></div></div>
         <form class="settings-fields" @submit.prevent="updatePassword">
@@ -147,6 +159,7 @@ function enableMfa() {
 .current-password-field { grid-column: 1 / -1; }
 .settings-save-row { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 2px 4px; }
 .settings-save-row p { margin: 0 auto 0 0; color: #718096; font-size: 12px; }
+.settings-location-save { grid-column: 1 / -1; }
 .security-panel { margin-top: 14px; }
 .password-guidance { margin: 0; color: #718096; font-size: 12px; }
 .mfa-state { margin: 0; color: #344054; font-size: 13px; }
