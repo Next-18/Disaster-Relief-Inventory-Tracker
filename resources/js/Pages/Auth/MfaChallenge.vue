@@ -10,11 +10,11 @@ function submit() { form.post(routes.value.mfaVerify, { replace: true, onFinish:
 </script>
 
 <template>
-    <Head title="Super Admin verification" />
+    <Head title="Account verification" />
     <main class="mfa-page">
         <section class="mfa-card">
             <div class="lock-mark" aria-hidden="true">◆</div>
-            <h1>{{ needsSetup ? 'Protect your Super Admin account' : 'Verify it’s you' }}</h1>
+            <h1>{{ needsSetup ? 'Protect your account' : 'Verify it’s you' }}</h1>
             <p v-if="needsSetup">Set up an authenticator app for <strong>{{ email }}</strong>. Scan this QR code with your authenticator app, or enter the account key manually.</p>
             <p v-else>Enter the six-digit code from your authenticator app, or use one of your recovery codes.</p>
             <div v-if="needsSetup" class="setup-key">

@@ -1489,12 +1489,16 @@ protected function generateUniqueQrToken(): string
     public function settings(Request $request)
     {
         $isSuperAdmin = $request->user()->role === 'super_admin';
+        $canManageSettings = in_array($request->user()->role, ['super_admin', 'admin'], true);
         $barangayId = $this->currentBarangayId($request);
 
         // Initialize default settings if they don't exist
-        $this->initializeDefaultSettings();
+        if ($isSuperAdmin) {
+            $this->initializeDefaultSettings();
+        }
 
         if ($request->isMethod('post')) {
+            abort_unless($canManageSettings, 403);
             $rules = [];
             if ($isSuperAdmin) {
                 $rules += [
@@ -1548,9 +1552,11 @@ protected function generateUniqueQrToken(): string
         return Inertia::render('Admin/Settings', [
             'settings' => $settings,
             'isSuperAdmin' => $isSuperAdmin,
-            'hasBarangayWorkspace' => (bool) $barangayId,
-            'mfaEnabled' => $isSuperAdmin && (bool) $request->user()->mfa_enabled_at,
-            'mfaRecoveryCodes' => $isSuperAdmin ? $request->session()->pull('mfa_recovery_codes_once', []) : [],
+            'canManageSettings' => $canManageSettings,
+            'hasBarangayWorkspace' => $canManageSettings && (bool) $barangayId,
+            'mfaEnabled' => (bool) $request->user()->mfa_enabled_at,
+            'mfaRecoveryCodes' => $request->session()->pull('mfa_recovery_codes_once', []),
+            'mfaSetup' => $request->session()->get('account_mfa_setup'),
         ]);
     }
 

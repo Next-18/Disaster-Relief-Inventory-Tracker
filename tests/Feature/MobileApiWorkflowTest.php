@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Beneficiary;
+use App\Models\Barangay;
+use App\Models\AuditLog;
 use App\Models\Distribution;
 use App\Models\InventoryItem;
 use App\Models\ReliefPackage;
@@ -174,6 +176,103 @@ class MobileApiWorkflowTest extends TestCase
             ->assertStatus(410)
             ->assertJsonPath('success', false);
         $this->assertDatabaseCount('distributions', 0);
+    }
+
+    public function test_api_assignment_cannot_be_created_as_released_or_for_inactive_beneficiary(): void
+    {
+        $barangay = Barangay::create(['name' => 'API Assignment', 'municipality' => 'Test City', 'province' => 'Test Province']);
+        $admin = User::factory()->create(['role' => 'admin', 'barangay_id' => $barangay->id]);
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-API-ASSIGN',
+            'full_name' => 'Ari Santos',
+            'status' => 'Active',
+            'barangay_id' => $barangay->id,
+        ]);
+        $package = ReliefPackage::create([
+            'package_name' => 'API assignment pack',
+            'category' => 'Food',
+            'status' => 'Available',
+            'barangay_id' => $barangay->id,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/distributions', [
+            'beneficiary_id' => $beneficiary->id,
+            'package_id' => $package->id,
+            'status' => 'Released',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
+
+        $beneficiary->update(['status' => 'Inactive']);
+        $this->postJson('/api/distributions', [
+            'beneficiary_id' => $beneficiary->id,
+            'package_id' => $package->id,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('beneficiary_id');
+
+        $this->assertDatabaseCount('distributions', 0);
+    }
+
+    public function test_api_assignment_ignores_client_release_date_and_requires_qr_confirmation(): void
+    {
+        $barangay = Barangay::create(['name' => 'API Pending', 'municipality' => 'Test City', 'province' => 'Test Province']);
+        $admin = User::factory()->create(['role' => 'admin', 'barangay_id' => $barangay->id]);
+        $beneficiary = Beneficiary::create([
+            'beneficiary_no' => 'BEN-API-PENDING',
+            'full_name' => 'Mina Reyes',
+            'status' => 'Active',
+            'barangay_id' => $barangay->id,
+        ]);
+        $item = InventoryItem::create([
+            'item_name' => 'API water',
+            'category' => 'Water',
+            'quantity' => 10,
+            'unit' => 'cases',
+            'minimum_stock' => 2,
+            'barangay_id' => $barangay->id,
+        ]);
+        $package = ReliefPackage::create([
+            'package_name' => 'API water pack',
+            'category' => 'Water',
+            'status' => 'Available',
+            'barangay_id' => $barangay->id,
+        ]);
+        $package->inventoryItems()->attach($item->id, ['quantity_per_package' => 2]);
+        Sanctum::actingAs($admin);
+        $startDate = today()->toDateString();
+        $deadline = today()->addDay()->toDateString();
+
+        $response = $this->postJson('/api/distributions', [
+            'beneficiary_id' => $beneficiary->id,
+            'package_id' => $package->id,
+            'start_date' => $startDate,
+            'deadline' => $deadline,
+            'date_released' => today()->subYear()->toDateString(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'Pending')
+            ->assertJsonPath('data.date_released', $startDate);
+
+        $distributionId = $response->json('data.id');
+        $this->assertSame(8, $item->fresh()->quantity);
+        $this->assertDatabaseHas('audit_logs', [
+            'user_id' => $admin->id,
+            'barangay_id' => $barangay->id,
+            'action' => 'create',
+            'module' => 'distribution',
+            'description' => "Assigned API water pack to Mina Reyes (distribution ID {$distributionId}) via mobile API",
+        ]);
+
+        $this->postJson('/api/distributions/release-pending', [
+            'beneficiary_no' => $beneficiary->beneficiary_no,
+            'distribution_id' => $distributionId,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'Released');
+
+        $this->assertSame(8, $item->fresh()->quantity);
     }
 
     public function test_web_release_retry_uses_the_same_claim_id_without_deducting_stock_twice(): void

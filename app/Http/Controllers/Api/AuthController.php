@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
+use App\Support\Totp;
 
 class AuthController extends Controller
 {
@@ -25,6 +27,7 @@ class AuthController extends Controller
             'username' => ['nullable', 'string', 'max:255', 'required_without:beneficiary_no'],
             'beneficiary_no' => ['nullable', 'string', 'max:255', 'required_without:username'],
             'password' => ['required', 'string'],
+            'mfa_code' => ['nullable', 'string', 'max:32'],
         ]);
 
         $identifier = trim((string) ($validated['username'] ?? $validated['beneficiary_no']));
@@ -53,6 +56,18 @@ class AuthController extends Controller
             throw ValidationException::withMessages([
                 'beneficiary_no' => ['This account is not permitted to sign in through the mobile app.'],
             ]);
+        }
+
+        if (in_array($user->role, ['admin', 'staff', 'volunteer'], true) && $user->mfa_enabled_at) {
+            if (empty($validated['mfa_code']) || ! $this->verifyMfaCode($user, $validated['mfa_code'])) {
+                Auth::logout();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A valid authenticator or unused recovery code is required.',
+                    'errors' => ['mfa_code' => ['Enter your current authenticator code or an unused recovery code.']],
+                ], 422);
+            }
         }
 
         if ($user->role === 'user' && ! $user->password_changed) {
@@ -150,5 +165,25 @@ class AuthController extends Controller
             'success' => true,
             'message' => 'Password changed successfully.',
         ]);
+    }
+
+    private function verifyMfaCode(\App\Models\User $user, string $code): bool
+    {
+        $code = strtoupper(preg_replace('/[\s-]+/', '', $code));
+        if (Totp::verify((string) $user->mfa_secret, $code)) {
+            return true;
+        }
+
+        $codes = $user->mfa_recovery_codes ?? [];
+        foreach ($codes as $index => $hash) {
+            if (Hash::check($code, $hash)) {
+                unset($codes[$index]);
+                $user->mfa_recovery_codes = array_values($codes);
+                $user->save();
+                return true;
+            }
+        }
+
+        return false;
     }
 }

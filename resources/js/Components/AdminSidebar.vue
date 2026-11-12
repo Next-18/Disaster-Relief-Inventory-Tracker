@@ -52,11 +52,13 @@ const groups = computed(() => {
             { label: 'Relief Operations', links: allLinks.filter((link) => ['Deliveries', 'Inventory', 'Distribution'].includes(link.label)) },
             { label: 'Help', links: allLinks.filter((link) => link.label === 'Support') },
             { label: 'Updates', links: allLinks.filter((link) => link.label === 'Announcements') },
+            { label: 'Account', links: allLinks.filter((link) => link.label === 'Settings') },
         ];
     }
     return [
         { label: 'Relief Operations', links: allLinks.filter((link) => link.label === 'Distribution') },
         { label: 'Help', links: allLinks.filter((link) => link.label === 'Support') },
+        { label: 'Account', links: allLinks.filter((link) => link.label === 'Settings') },
     ];
 });
 const homeRoute = computed(() => user.value.role === 'super_admin' ? routes.value.barangays : (user.value.role === 'admin' ? routes.value.dashboard : routes.value.distribution));

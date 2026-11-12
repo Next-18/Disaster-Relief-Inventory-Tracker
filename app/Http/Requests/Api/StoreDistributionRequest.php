@@ -15,19 +15,21 @@ class StoreDistributionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'beneficiary_id' => ['required', $this->scopedExists('beneficiaries')],
+            'beneficiary_id' => ['required', $this->scopedExists('beneficiaries', 'Active')],
             'package_id' => ['required', $this->scopedExists('relief_packages')],
-            'date_released' => ['nullable', 'date'],
             'start_date' => ['nullable', 'required_with:deadline', 'date'],
             'deadline' => ['nullable', 'required_with:start_date', 'date', 'after_or_equal:start_date'],
-            'status' => ['required', 'in:Pending,Released'],
+            'status' => ['sometimes', 'in:Pending'],
             'notes' => ['nullable', 'string'],
         ];
     }
 
-    private function scopedExists(string $table)
+    private function scopedExists(string $table, ?string $status = null)
     {
         $rule = Rule::exists($table, 'id');
+        if ($status !== null) {
+            $rule->where('status', $status);
+        }
         $user = $this->user();
         $barangayId = $user?->role === 'super_admin'
             ? ($this->hasSession() ? $this->session()->get('active_barangay_id') : null)

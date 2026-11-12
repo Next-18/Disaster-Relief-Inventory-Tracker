@@ -13,6 +13,15 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
 Route::get('/mfa/challenge', [MfaController::class, 'challenge'])->name('mfa.challenge');
 Route::post('/mfa/challenge', [MfaController::class, 'verify'])->middleware('throttle:5,1')->name('mfa.verify');
+Route::post('/account/mfa/reset', [MfaController::class, 'disable'])
+    ->middleware(['auth', 'account-active', 'throttle:5,1'])
+    ->name('account.mfa.reset');
+Route::post('/account/mfa/setup', [MfaController::class, 'beginSettingsSetup'])
+    ->middleware(['auth', 'account-active', 'super-admin-mfa', 'distribution-operator', 'throttle:5,1'])
+    ->name('account.mfa.setup');
+Route::post('/account/mfa/enable', [MfaController::class, 'enableFromSettings'])
+    ->middleware(['auth', 'account-active', 'super-admin-mfa', 'distribution-operator', 'throttle:5,1'])
+    ->name('account.mfa.enable');
 Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1')->name('register.attempt');
 Route::get('/dashboard', [AuthController::class, 'dashboard'])->middleware(['auth', 'account-active', 'super-admin-mfa', 'admin'])->name('dashboard');
@@ -25,8 +34,13 @@ Route::middleware(['auth', 'account-active', 'super-admin-mfa', 'super-admin'])-
     Route::delete('/barangay-context', [BarangayController::class, 'clearContext'])->name('barangays.clear-context');
     Route::get('/support', [SupportController::class, 'superAdminIndex'])->name('support');
     Route::patch('/support/{ticket}', [SupportController::class, 'update'])->name('support.update');
-    Route::post('/mfa/disable', [MfaController::class, 'disable'])->middleware('throttle:5,1')->name('mfa.disable');
 });
+Route::get('/admin/settings', [AdminController::class, 'settings'])
+    ->middleware(['auth', 'account-active', 'super-admin-mfa', 'distribution-operator'])
+    ->name('admin.settings');
+Route::post('/admin/settings', [AdminController::class, 'settings'])
+    ->middleware(['auth', 'account-active', 'super-admin-mfa', 'distribution-operator', 'barangay-write-context'])
+    ->name('admin.settings.save');
 Route::middleware(['auth', 'account-active', 'super-admin-mfa', 'distribution-operator'])->group(function () {
     Route::get('/admin/distribution', [AdminController::class, 'distribution'])->name('admin.distribution');
     Route::get('/admin/support', [SupportController::class, 'index'])->name('admin.support');
@@ -84,6 +98,5 @@ Route::middleware(['auth', 'account-active', 'super-admin-mfa', 'admin', 'barang
     Route::get('/admin/reports/export', [AdminController::class, 'exportReport'])->name('admin.reports.export');
     Route::get('/admin/reports', [AdminController::class, 'reports'])->name('admin.reports');
     Route::get('/admin/audit-logs', [AdminController::class, 'auditLogs'])->name('admin.audit-logs');
-Route::match(['get', 'post'], '/admin/settings', [AdminController::class, 'settings'])->name('admin.settings');
 });
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');

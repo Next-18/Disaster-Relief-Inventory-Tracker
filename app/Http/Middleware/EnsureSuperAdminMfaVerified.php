@@ -12,7 +12,9 @@ class EnsureSuperAdminMfaVerified
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if ($user?->role !== 'super_admin'
+        $mfaRequired = $user?->role === 'super_admin'
+            || (in_array($user?->role, ['admin', 'staff', 'volunteer'], true) && (bool) $user->mfa_enabled_at);
+        if (! $mfaRequired
             || (int) $request->session()->get('super_admin_mfa_verified_user_id') === (int) $user->id) {
             return $next($request);
         }

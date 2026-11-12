@@ -1,5 +1,5 @@
 <script setup>
-import { useForm, usePage } from '@inertiajs/vue3';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 import AdminLayout from '../../Layouts/AdminLayout.vue';
 
@@ -8,9 +8,11 @@ defineOptions({ layout: AdminLayout });
 const props = defineProps({
     settings: { type: Object, required: true },
     isSuperAdmin: { type: Boolean, default: false },
+    canManageSettings: { type: Boolean, default: false },
     hasBarangayWorkspace: { type: Boolean, default: false },
     mfaEnabled: { type: Boolean, default: false },
     mfaRecoveryCodes: { type: Array, default: () => [] },
+    mfaSetup: { type: Object, default: null },
 });
 const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
@@ -25,6 +27,7 @@ const form = useForm({
 });
 const passwordForm = useForm({ current_password: '', password: '', password_confirmation: '' });
 const mfaForm = useForm({ current_password: '', code: '' });
+const mfaEnableForm = useForm({ code: '' });
 
 watch(() => props.settings, (settings) => {
     Object.assign(form, {
@@ -53,11 +56,19 @@ function updatePassword() {
 function disableMfa() {
     mfaForm.post(routes.value.mfaDisable, { preserveScroll: true, onSuccess: () => mfaForm.reset() });
 }
+
+function beginMfaSetup() {
+    router.post(routes.value.mfaSetup, {}, { preserveScroll: true });
+}
+
+function enableMfa() {
+    mfaEnableForm.post(routes.value.mfaEnable, { preserveScroll: true, onSuccess: () => mfaEnableForm.reset() });
+}
 </script>
 
 <template>
-    <section class="module-heading"><div><h2>Settings</h2><p v-if="isSuperAdmin && !hasBarangayWorkspace">Manage platform details. Select a barangay workspace to edit its location details.</p><p v-else>Configure {{ isSuperAdmin ? 'platform and barangay' : 'barangay' }} settings and account security.</p></div></section>
-    <form class="settings-form" @submit.prevent="saveSettings">
+    <section class="module-heading"><div><h2>Settings</h2><p v-if="!canManageSettings">Manage your account security and sign-in protection.</p><p v-else-if="isSuperAdmin && !hasBarangayWorkspace">Manage platform details. Select a barangay workspace to edit its location details.</p><p v-else>Configure {{ isSuperAdmin ? 'platform and barangay' : 'barangay' }} settings and account security.</p></div></section>
+    <form v-if="canManageSettings" class="settings-form" @submit.prevent="saveSettings">
         <section v-if="isSuperAdmin" class="panel record-panel">
             <div class="panel-heading"><div><h3>General Settings</h3><p>Basic site configuration and contact information</p></div></div>
             <div class="settings-fields">
@@ -83,7 +94,7 @@ function disableMfa() {
         </section>
     </form>
     <section class="panel record-panel security-panel">
-        <div class="panel-heading"><div><h3>Account security</h3><p>Change the password for your signed-in administrator account.</p></div></div>
+        <div class="panel-heading"><div><h3>Account security</h3><p>Change your password and manage sign-in protection.</p></div></div>
         <form class="settings-fields" @submit.prevent="updatePassword">
             <p class="password-guidance">Use at least 12 characters with uppercase and lowercase letters and a number.</p>
             <div class="settings-grid two-columns">
@@ -94,19 +105,31 @@ function disableMfa() {
             <div class="settings-actions"><button class="security-save" type="submit" :disabled="passwordForm.processing">{{ passwordForm.processing ? 'Updating…' : 'Update password' }}</button></div>
         </form>
     </section>
-    <section v-if="isSuperAdmin" class="panel record-panel security-panel">
-        <div class="panel-heading"><div><h3>Multi-factor authentication</h3><p>Authenticator codes are required every time a Super Admin signs in.</p></div></div>
+    <section class="panel record-panel security-panel">
+        <div class="panel-heading"><div><h3>Multi-factor authentication</h3><p v-if="isSuperAdmin">Authenticator codes are required every time you sign in.</p><p v-else>Optional extra protection. When enabled, an authenticator code will be required at each web or mobile sign-in.</p></div></div>
         <div class="settings-fields">
             <p v-if="mfaEnabled" class="mfa-state">Authenticator protection is enabled.</p>
-            <p v-else class="mfa-state">Setup is required at your next sign-in. Keep your recovery codes somewhere private and separate from this device.</p>
+            <p v-else-if="isSuperAdmin" class="mfa-state">Setup is required at your next sign-in. Keep your recovery codes somewhere private and separate from this device.</p>
+            <p v-else class="mfa-state">Authenticator protection is currently off.</p>
             <div v-if="mfaRecoveryCodes.length" class="recovery-codes" role="status">
                 <strong>Save these recovery codes now. Each code works once.</strong>
                 <code v-for="code in mfaRecoveryCodes" :key="code">{{ code }}</code>
             </div>
+            <div v-if="mfaSetup && !mfaEnabled" class="mfa-setup">
+                <span>Scan this QR code with an authenticator app</span>
+                <img class="setup-qr" :src="mfaSetup.qrCodeDataUri" alt="Authenticator setup QR code">
+                <span>Or enter this key manually</span>
+                <code>{{ mfaSetup.secret }}</code>
+                <form class="settings-fields mfa-disable-form" @submit.prevent="enableMfa">
+                    <label>Authenticator code<input v-model="mfaEnableForm.code" inputmode="numeric" autocomplete="one-time-code" required><small v-if="mfaEnableForm.errors.code" class="field-error">{{ mfaEnableForm.errors.code }}</small></label>
+                    <button class="security-save" type="submit" :disabled="mfaEnableForm.processing">{{ mfaEnableForm.processing ? 'Enabling…' : 'Confirm and enable MFA' }}</button>
+                </form>
+            </div>
+            <button v-if="!mfaEnabled && !isSuperAdmin && !mfaSetup" class="security-save" type="button" :disabled="mfaForm.processing" @click="beginMfaSetup">Set up authenticator</button>
             <form v-if="mfaEnabled" class="settings-fields mfa-disable-form" @submit.prevent="disableMfa">
                 <label>Current password<input v-model="mfaForm.current_password" type="password" autocomplete="current-password" required><small v-if="mfaForm.errors.current_password" class="field-error">{{ mfaForm.errors.current_password }}</small></label>
                 <label>Authenticator or recovery code<input v-model="mfaForm.code" autocomplete="one-time-code" required><small v-if="mfaForm.errors.code" class="field-error">{{ mfaForm.errors.code }}</small></label>
-                <button class="security-save" type="submit" :disabled="mfaForm.processing">{{ mfaForm.processing ? 'Updating…' : 'Reset authenticator setup' }}</button>
+                <button class="security-save" type="submit" :disabled="mfaForm.processing">{{ mfaForm.processing ? 'Updating…' : (isSuperAdmin ? 'Reset authenticator setup' : 'Turn off MFA') }}</button>
             </form>
         </div>
     </section>
@@ -127,6 +150,9 @@ function disableMfa() {
 .security-panel { margin-top: 14px; }
 .password-guidance { margin: 0; color: #718096; font-size: 12px; }
 .mfa-state { margin: 0; color: #344054; font-size: 13px; }
+.mfa-setup { display: grid; justify-items: start; gap: 10px; padding: 16px; border: 1px solid #d9e2ec; border-radius: 10px; background: #f9fafb; color: #5b6d84; font-size: 13px; }
+.mfa-setup code { color: #29496f; font-size: 15px; letter-spacing: 1px; word-break: break-all; }
+.setup-qr { width: 220px; height: 220px; max-width: 100%; padding: 8px; background: #fff; border: 1px solid #d9e2ec; border-radius: 8px; image-rendering: pixelated; }
 .mfa-disable-form { padding: 0; }
 .recovery-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 14px; border: 1px solid #fdb022; border-radius: 8px; background: #fffaeb; }
 .recovery-codes strong { grid-column: 1 / -1; color: #7a2e0e; font-size: 13px; }

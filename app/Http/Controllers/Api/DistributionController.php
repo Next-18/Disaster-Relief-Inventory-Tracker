@@ -77,12 +77,25 @@ class DistributionController extends Controller
     public function store(StoreDistributionRequest $request, DistributionStockService $stock, BeneficiaryNotificationService $notifications)
     {
         $data = $request->validated();
-        $data['date_released'] ??= $data['start_date'] ?? today()->toDateString();
+        // API creation only assigns a package. Release is confirmed separately by QR scan.
+        $data['date_released'] = $data['start_date'] ?? today()->toDateString();
+        $data['status'] = 'Pending';
         $data['distributed_by'] = $request->user()->id;
 
-        $distribution = DB::transaction(function () use ($data, $stock) {
+        $distribution = DB::transaction(function () use ($data, $request, $stock) {
             $distribution = Distribution::create($data);
             $stock->consumeFor($distribution);
+
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'barangay_id' => $distribution->barangay_id,
+                'action' => 'create',
+                'module' => 'distribution',
+                'description' => "Assigned {$distribution->reliefPackage?->package_name} to {$distribution->beneficiary?->full_name} (distribution ID {$distribution->id}) via mobile API",
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
             return $distribution;
         });
         $distribution->load(['beneficiary', 'reliefPackage']);
@@ -90,7 +103,7 @@ class DistributionController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Distribution recorded successfully',
+            'message' => 'Package assigned successfully. Pickup must be confirmed by QR scan.',
             'data' => new DistributionResource($distribution),
         ], 201);
     }

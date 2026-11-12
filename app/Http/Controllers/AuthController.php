@@ -128,7 +128,8 @@ class AuthController extends Controller
                     : 'This account or its barangay workspace is inactive. Contact your administrator.'])->onlyInput('email');
             }
             RateLimiter::clear($key);
-            if ($user->role === 'super_admin') {
+            if ($user->role === 'super_admin'
+                || (in_array($user->role, ['admin', 'staff', 'volunteer'], true) && $user->mfa_enabled_at)) {
                 $request->session()->regenerate();
                 $request->session()->put('pending_super_admin_mfa_id', $user->id);
                 $request->session()->put('pending_super_admin_mfa_remember', $remember);
