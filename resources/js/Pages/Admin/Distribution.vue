@@ -37,7 +37,7 @@ const pendingReleaseOptions = ref([]);
 const pendingReleaseError = ref('');
 const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine);
 const editingId = ref(null);
-const form = useForm({ recipient_mode: 'individual', beneficiary_id: '', priority_type: '', package_id: '', start_date: '', deadline: '', status: 'Pending', notes: '' });
+const form = useForm({ recipient_mode: 'individual', beneficiary_id: '', priority_type: '', package_id: '', start_date: '', deadline: '', claim_venue: '', status: 'Pending', notes: '' });
 const rows = computed(() => props.distributions.data ?? []);
 const recipientCount = computed(() => {
     if (form.recipient_mode === 'individual') return form.beneficiary_id ? 1 : 0;
@@ -110,6 +110,7 @@ function openAddModal(beneficiaryId = '') {
     form.clearErrors();
     form.start_date = props.today;
     form.deadline = props.today;
+    form.claim_venue = '';
     form.status = 'Pending';
     form.recipient_mode = 'individual';
     form.priority_type = '';
@@ -128,6 +129,7 @@ function openEditModal(distribution) {
     form.package_id = distribution.package_id ?? '';
     form.start_date = distribution.start_date ?? String(distribution.date_released).slice(0, 10);
     form.deadline = distribution.deadline ?? String(distribution.date_released).slice(0, 10);
+    form.claim_venue = distribution.claim_venue ?? '';
     form.status = distribution.status;
     form.notes = distribution.notes ?? '';
     modal.value?.showModal();
@@ -301,17 +303,18 @@ function formatDate(value) {
             </form>
         </div>
         <div class="table-wrap"><table class="record-table field-distribution-table">
-            <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>DISTRIBUTION WINDOW</th><th>DATE RELEASED</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+            <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>CLAIM VENUE</th><th>DISTRIBUTION WINDOW</th><th>DATE RELEASED</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
             <tbody>
                 <tr v-for="distribution in rows" :key="distribution.id">
                     <td data-label="Beneficiary"><b>{{ distribution.beneficiary?.full_name ?? 'Unknown Beneficiary' }}</b><small>{{ distribution.beneficiary?.beneficiary_no ?? 'N/A' }}</small></td>
                     <td data-label="Package">{{ distribution.relief_package?.package_name ?? 'Unknown Package' }}</td>
+                    <td data-label="Claim venue">{{ distribution.claim_venue || 'Not specified' }}</td>
                     <td data-label="Distribution window"><span>{{ formatDate(distribution.start_date) }} – {{ formatDate(distribution.deadline) }}</span></td>
                     <td data-label="Date">{{ formatDate(distribution.date_released) }}</td>
                     <td data-label="Status"><span class="tag" :class="{ success: distribution.status === 'Released', warning: distribution.status === 'Pending', neutral: ['Cancelled', 'Voided'].includes(distribution.status) }">{{ distribution.status }}</span></td>
                     <td data-label="Actions"><div v-if="canManageDistributions && ['Pending', 'Released'].includes(distribution.status)" class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(distribution)">Edit</button><button type="button" class="action-btn delete" @click="deleteDistribution(distribution)">{{ distribution.status === 'Pending' ? 'Cancel assignment' : 'Void record' }}</button></div><span v-else>{{ ['Cancelled', 'Voided'].includes(distribution.status) ? 'History kept' : 'Recorded' }}</span></td>
                 </tr>
-                <tr v-if="!rows.length"><td colspan="6" class="empty-cell">{{ search ? 'No distributions match this search.' : 'No distribution records yet.' }}</td></tr>
+                <tr v-if="!rows.length"><td colspan="7" class="empty-cell">{{ search ? 'No distributions match this search.' : 'No distribution records yet.' }}</td></tr>
             </tbody>
         </table></div>
         <InertiaPagination :links="distributions.links" :show="distributions.last_page > 1" />
@@ -342,7 +345,7 @@ function formatDate(value) {
         <div class="modal-title"><div><h3>Choose package to release</h3><p>{{ pendingBeneficiary?.full_name }} · Release will be confirmed by the server.</p></div><button type="button" class="modal-close" aria-label="Close" @click="$event.currentTarget.closest('dialog')?.close()">×</button></div>
         <div class="pending-release-options">
             <button v-for="assignment in pendingReleaseOptions" :key="assignment.id" type="button" class="pending-release-option" @click="releasePendingDistribution(assignment)">
-                <strong>{{ assignment.package_name }}</strong><small>Assigned {{ assignment.assigned_date || 'date unavailable' }}</small><small v-if="assignment.start_date || assignment.deadline">Collection {{ assignment.start_date || 'any time' }} to {{ assignment.deadline || 'no deadline' }}</small>
+                <strong>{{ assignment.package_name }}</strong><small>Assigned {{ assignment.assigned_date || 'date unavailable' }}</small><small v-if="assignment.start_date || assignment.deadline">Collection {{ assignment.start_date || 'any time' }} to {{ assignment.deadline || 'no deadline' }}</small><small v-if="assignment.claim_venue">Claim at {{ assignment.claim_venue }}</small>
             </button>
             <small v-if="pendingReleaseError" class="field-error">{{ pendingReleaseError }}</small>
         </div>
@@ -361,6 +364,7 @@ function formatDate(value) {
                 <label>Start of distribution<input v-model="form.start_date" type="date" :max="form.deadline || undefined" required><small v-if="form.errors.start_date" class="field-error">{{ form.errors.start_date }}</small></label>
                 <label>Deadline<input v-model="form.deadline" type="date" :min="form.start_date || undefined" required><small v-if="form.errors.deadline" class="field-error">{{ form.errors.deadline }}</small></label>
             </div>
+            <label>Claim venue<input v-model="form.claim_venue" type="text" maxlength="255" placeholder="e.g. Barangay Hall, Covered Court" required><small v-if="form.errors.claim_venue" class="field-error">{{ form.errors.claim_venue }}</small></label>
             <div class="distribution-pending-status"><strong>{{ form.status === 'Released' ? 'Released — scan confirmed' : 'Pending — QR scan required' }}</strong><span>{{ form.status === 'Released' ? 'This record was already marked released after a QR scan. Its status cannot be changed here.' : 'Recording an assignment does not confirm pickup. It will be marked released only after staff scan the beneficiary’s QR code.' }}</span></div>
             <label>Notes<textarea v-model="form.notes" rows="3"/><small v-if="form.errors.notes" class="field-error">{{ form.errors.notes }}</small></label>
             <div class="modal-actions"><button type="button" class="cancel-button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing || !isOnline || recipientCount === 0 || insufficientPackageStock">{{ form.processing ? 'Saving…' : editingId ? 'Update Distribution' : 'Record Distribution' }}</button></div>

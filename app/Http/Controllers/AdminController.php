@@ -744,6 +744,7 @@ class AdminController extends Controller
                 $like = "%{$search}%";
                 $distributions->where('status', 'like', $like)
                     ->orWhere('notes', 'like', $like)
+                    ->orWhere('claim_venue', 'like', $like)
                     ->orWhereHas('beneficiary', function ($beneficiaries) use ($like) {
                         $beneficiaries->where('full_name', 'like', $like)
                             ->orWhere('beneficiary_no', 'like', $like)
@@ -808,6 +809,7 @@ class AdminController extends Controller
                 'assigned_date' => $distribution->date_released?->format('Y-m-d'),
                 'start_date' => $distribution->start_date?->format('Y-m-d'),
                 'deadline' => $distribution->deadline?->format('Y-m-d'),
+                'claim_venue' => $distribution->claim_venue,
             ])
             ->values();
         $releasedToday = $beneficiary->distributions()
@@ -908,6 +910,7 @@ class AdminController extends Controller
             'package_id' => ['required', $this->barangayExistsRule('relief_packages')],
             'start_date' => ['required', 'date'],
             'deadline' => ['required', 'date', 'after_or_equal:start_date'],
+            'claim_venue' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
         $data['date_released'] = $data['start_date'];
@@ -969,11 +972,13 @@ class AdminController extends Controller
             'package_id' => ['required', $this->barangayExistsRule('relief_packages')],
             'start_date' => ['required', 'date'],
             'deadline' => ['required', 'date', 'after_or_equal:start_date'],
+            'claim_venue' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
         $wasPending = $distribution->status === 'Pending';
         $beneficiaryChanged = (int) $distribution->beneficiary_id !== (int) $data['beneficiary_id'];
         $packageChanged = (int) $distribution->package_id !== (int) $data['package_id'];
+        $venueChanged = $distribution->claim_venue !== $data['claim_venue'];
         $windowChanged = $distribution->start_date?->toDateString() !== $data['start_date']
             || $distribution->deadline?->toDateString() !== $data['deadline'];
         DB::transaction(function () use ($distribution, $data, $stock) {
@@ -981,7 +986,7 @@ class AdminController extends Controller
             $distribution->update($data);
             $stock->consumeFor($distribution);
         });
-        if ($distribution->status === 'Pending' && (! $wasPending || $beneficiaryChanged || $packageChanged || $windowChanged)) {
+        if ($distribution->status === 'Pending' && (! $wasPending || $beneficiaryChanged || $packageChanged || $venueChanged || $windowChanged)) {
             $notifications->notifyPendingAssignments([$distribution->load(['beneficiary', 'reliefPackage'])]);
         }
         $this->logAudit('update', 'distribution', "Updated distribution record ID: {$id}");

@@ -19,6 +19,7 @@ class StoreDistributionRequest extends FormRequest
             'package_id' => ['required', $this->scopedExists('relief_packages')],
             'start_date' => ['nullable', 'required_with:deadline', 'date'],
             'deadline' => ['nullable', 'required_with:start_date', 'date', 'after_or_equal:start_date'],
+            'claim_venue' => ['nullable', 'string', 'max:255'],
             'status' => ['sometimes', 'in:Pending'],
             'notes' => ['nullable', 'string'],
         ];

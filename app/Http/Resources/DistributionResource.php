@@ -16,6 +16,7 @@ class DistributionResource extends JsonResource
             'date_released' => $this->date_released?->format('Y-m-d'),
             'start_date' => $this->start_date?->format('Y-m-d'),
             'deadline' => $this->deadline?->format('Y-m-d'),
+            'claim_venue' => $this->claim_venue,
             'status' => $this->status,
             'notes' => $this->when($request->user()?->canReleasePackages(), $this->notes),
             'distributed_by' => $this->when($request->user()?->canReleasePackages(), $this->distributed_by),

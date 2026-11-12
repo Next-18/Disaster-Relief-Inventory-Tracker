@@ -91,6 +91,9 @@ class BeneficiaryNotificationService
             } elseif ($distribution->date_released) {
                 $message .= ' Please collect it on '.$distribution->date_released->format('M j, Y').'.';
             }
+            if ($distribution->claim_venue) {
+                $message .= ' Claim location: '.$distribution->claim_venue.'.';
+            }
             $message .= ' Show your QR code to relief staff when collecting it.';
 
             $rows[] = [

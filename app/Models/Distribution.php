@@ -8,7 +8,7 @@ use App\Models\Concerns\BelongsToBarangay;
 class Distribution extends Model
 {
     use BelongsToBarangay;
-    protected $fillable = ['barangay_id', 'beneficiary_id', 'package_id', 'date_released', 'start_date', 'deadline', 'status', 'notes', 'distributed_by', 'offline_claim_id'];
+    protected $fillable = ['barangay_id', 'beneficiary_id', 'package_id', 'date_released', 'start_date', 'deadline', 'claim_venue', 'status', 'notes', 'distributed_by', 'offline_claim_id'];
 
     protected $casts = [
         'date_released' => 'date',
