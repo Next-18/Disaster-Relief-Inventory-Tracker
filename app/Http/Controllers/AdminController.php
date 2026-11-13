@@ -13,6 +13,7 @@ use App\Models\StockDelivery;
 use App\Models\User;
 use App\Services\DistributionStockService;
 use App\Services\BeneficiaryNotificationService;
+use App\Services\PackagePreparationService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -674,7 +675,7 @@ class AdminController extends Controller
         ]);
     }
 
-    public function storePackage(Request $request)
+    public function storePackage(Request $request, PackagePreparationService $preparation)
     {
         $data = $request->validate([
             'package_name' => ['required', 'string', 'max:255'],
@@ -689,13 +690,17 @@ class AdminController extends Controller
             $item['inventory_item_id'] => ['quantity_per_package' => $item['quantity_per_package']],
         ])->all();
         unset($data['items']);
-        $package = DB::transaction(function () use ($data, $ingredients) {
+        [$package, $packsPrepared] = DB::transaction(function () use ($data, $ingredients, $preparation) {
             $package = ReliefPackage::create($data);
             $package->inventoryItems()->sync($ingredients);
-            return $package;
+            $packsPrepared = $preparation->prepareAvailable($package);
+            return [$package, $packsPrepared];
         });
-        $this->logAudit('create', 'packages', "Created relief package: {$package->package_name}");
-        return redirect()->route('admin.packages')->with('success', 'Relief package added successfully.');
+        $this->logAudit('create', 'packages', "Created {$package->package_name} and prepared {$packsPrepared} pack(s)");
+        $message = $packsPrepared > 0
+            ? "Package created; {$packsPrepared} pack(s) prepared and inventory deducted."
+            : 'Package template created, but current inventory is not enough to prepare one complete pack.';
+        return redirect()->route('admin.packages')->with('success', $message);
     }
 
     public function updatePackage(Request $request, $id)
@@ -715,24 +720,64 @@ class AdminController extends Controller
         ])->all();
         unset($data['items']);
         DB::transaction(function () use ($package, $data, $ingredients) {
-            $package->update($data);
-            $package->inventoryItems()->sync($ingredients);
+            $lockedPackage = ReliefPackage::query()->lockForUpdate()->findOrFail($package->id);
+            $currentRecipe = $lockedPackage->inventoryItems()->get()
+                ->mapWithKeys(fn ($item) => [$item->id => (int) $item->pivot->quantity_per_package])
+                ->sortKeys()
+                ->all();
+            $nextRecipe = collect($ingredients)->map(fn ($item) => (int) $item['quantity_per_package'])->sortKeys()->all();
+
+            if ($lockedPackage->quantity_on_hand > 0 && $currentRecipe !== $nextRecipe) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'items' => 'This package has prepared packs in stock. Use the existing recipe until those packs are distributed, or prepare them before changing the recipe.',
+                ]);
+            }
+
+            $lockedPackage->update($data);
+            $lockedPackage->inventoryItems()->sync($ingredients);
         });
+        $package->refresh();
         $this->logAudit('update', 'packages', "Updated relief package: {$package->package_name}");
         return redirect()->route('admin.packages')->with('success', 'Relief package updated successfully.');
     }
 
-    public function deletePackage($id)
+    public function preparePackageStock($id, PackagePreparationService $preparation)
     {
         $package = ReliefPackage::findOrFail($id);
-        if ($package->distributions()->exists()) {
+        $packsPrepared = DB::transaction(fn () => $preparation->prepareAvailable($package));
+
+        if ($packsPrepared < 1) {
+            return back()->with('error', 'Current inventory is not enough to prepare one complete pack.');
+        }
+
+        $this->logAudit('prepare', 'packages', "Prepared {$packsPrepared} additional {$package->package_name} pack(s)");
+        return back()->with('success', "{$packsPrepared} pack(s) prepared and inventory deducted.");
+    }
+
+    public function deletePackage($id, PackagePreparationService $preparation)
+    {
+        $result = DB::transaction(function () use ($id, $preparation) {
+            $package = ReliefPackage::query()->lockForUpdate()->findOrFail($id);
+            if ($package->distributions()->exists()) {
+                return ['blocked' => true];
+            }
+
+            $packsReturned = $preparation->returnPreparedStock($package);
+            $packageName = $package->package_name;
+            $package->delete();
+
+            return ['blocked' => false, 'packsReturned' => $packsReturned, 'packageName' => $packageName];
+        });
+
+        if ($result['blocked']) {
             return back()->with('error', 'This package has distribution history and cannot be deleted. Mark it unavailable to preserve its records.');
         }
 
-        $packageName = $package->package_name;
-        $package->delete();
-        $this->logAudit('delete', 'packages', "Deleted relief package: {$packageName}");
-        return redirect()->route('admin.packages')->with('success', 'Relief package deleted successfully.');
+        $this->logAudit('delete', 'packages', "Deleted relief package: {$result['packageName']}; returned {$result['packsReturned']} prepared pack(s) to inventory");
+        $message = $result['packsReturned'] > 0
+            ? "Package deleted; {$result['packsReturned']} prepared pack(s) returned to inventory."
+            : 'Package deleted. It had no prepared packs to return.';
+        return redirect()->route('admin.packages')->with('success', $message);
     }
 
     public function distribution(Request $request)
@@ -748,6 +793,13 @@ class AdminController extends Controller
         $status = in_array($request->input('status'), ['Pending', 'Released', 'Cancelled', 'Voided'], true)
             ? $request->input('status')
             : 'all';
+        $dateFilter = preg_match('/^\d{4}-\d{2}-\d{2}$/D', (string) $request->input('date', ''))
+            ? (string) $request->input('date')
+            : '';
+
+        if ($dateFilter !== '') {
+            $query->whereDate('date_released', $dateFilter);
+        }
 
         if ($canViewDistributionHistory && $status !== 'all') {
             $query->where('status', $status);
@@ -757,6 +809,7 @@ class AdminController extends Controller
             $query->where(function ($distributions) use ($search) {
                 $like = "%{$search}%";
                 $distributions->where('status', 'like', $like)
+                    ->orWhere('event_name', 'like', $like)
                     ->orWhere('notes', 'like', $like)
                     ->orWhere('claim_venue', 'like', $like)
                     ->orWhereHas('beneficiary', function ($beneficiaries) use ($like) {
@@ -782,16 +835,25 @@ class AdminController extends Controller
         }
 
         $distributions = $query->latest('date_released')->paginate(10)->withQueryString();
+        $distributedToday = $canViewDistributionHistory
+            ? Distribution::with(['beneficiary:id,beneficiary_no,full_name', 'reliefPackage:id,package_name'])
+                ->where('status', 'Released')
+                ->whereDate('date_released', today())
+                ->orderByDesc('released_at')
+                ->get()
+            : collect();
         $beneficiaries = $canAssignDistributions ? Beneficiary::where('status', 'Active')->orderBy('full_name')->get() : collect();
         $packages = $canAssignDistributions
             ? ReliefPackage::with('inventoryItems:id,item_name,unit,quantity')->where('status', 'Available')->orderBy('package_name')->get()->filter(fn (ReliefPackage $package) => $package->available_quantity > 0)->values()
             : collect();
         return Inertia::render('Admin/Distribution', [
             'distributions' => $distributions,
+            'distributedToday' => $distributedToday,
             'beneficiaries' => $beneficiaries,
             'packages' => $packages,
             'search' => $search,
             'status' => $status,
+            'dateFilter' => $dateFilter,
             'today' => now()->format('Y-m-d'),
             'canManageDistributions' => auth()->user()->canManageBarangay(),
             'canAssignDistributions' => $canAssignDistributions,
@@ -898,6 +960,7 @@ class AdminController extends Controller
             $distribution->update([
                 'status' => 'Released',
                 'date_released' => now(),
+                'released_at' => now(),
                 'distributed_by' => $request->user()->id,
                 'offline_claim_id' => $validated['offline_claim_id'] ?? null,
             ]);
@@ -924,6 +987,7 @@ class AdminController extends Controller
             'package_id' => ['required', $this->barangayExistsRule('relief_packages')],
             'start_date' => ['required', 'date'],
             'deadline' => ['required', 'date', 'after_or_equal:start_date'],
+            'event_name' => ['nullable', 'string', 'max:255'],
             'claim_venue' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
@@ -986,6 +1050,7 @@ class AdminController extends Controller
             'package_id' => ['required', $this->barangayExistsRule('relief_packages')],
             'start_date' => ['required', 'date'],
             'deadline' => ['required', 'date', 'after_or_equal:start_date'],
+            'event_name' => ['nullable', 'string', 'max:255'],
             'claim_venue' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);

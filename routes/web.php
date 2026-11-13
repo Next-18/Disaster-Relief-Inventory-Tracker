@@ -84,6 +84,7 @@ Route::middleware(['auth', 'account-active', 'super-admin-mfa', 'admin', 'barang
     Route::get('/admin/packages', [AdminController::class, 'packages'])->name('admin.packages');
     Route::post('/admin/packages', [AdminController::class, 'storePackage'])->name('admin.packages.store');
     Route::put('/admin/packages/{id}', [AdminController::class, 'updatePackage'])->name('admin.packages.update');
+    Route::post('/admin/packages/{id}/prepare-stock', [AdminController::class, 'preparePackageStock'])->name('admin.packages.prepare-stock');
     Route::delete('/admin/packages/{id}', [AdminController::class, 'deletePackage'])->name('admin.packages.delete');
     Route::get('/admin/qr-codes', [AdminController::class, 'qrCodes'])->name('admin.qr-codes');
     Route::post('/admin/qr-codes/generate/{id}', [AdminController::class, 'generateQRCode'])->name('admin.qr-codes.generate');

@@ -8,7 +8,7 @@ use App\Models\Concerns\BelongsToBarangay;
 class ReliefPackage extends Model
 {
     use BelongsToBarangay;
-    protected $fillable = ['barangay_id', 'package_name', 'description', 'category', 'status'];
+    protected $fillable = ['barangay_id', 'package_name', 'description', 'category', 'status', 'quantity_on_hand'];
 
     protected $appends = ['available_quantity'];
 
@@ -26,17 +26,6 @@ class ReliefPackage extends Model
 
     public function getAvailableQuantityAttribute(): int
     {
-        $items = $this->relationLoaded('inventoryItems')
-            ? $this->inventoryItems
-            : $this->inventoryItems()->get();
-
-        if ($items->isEmpty()) {
-            return 0;
-        }
-
-        return (int) $items->min(fn (InventoryItem $item) => intdiv(
-            (int) $item->quantity,
-            max(1, (int) $item->pivot->quantity_per_package),
-        ));
+        return (int) $this->quantity_on_hand;
     }
 }

@@ -25,6 +25,26 @@ let searchTimer;
 let lastSearch = filters.search.trim();
 const rows = computed(() => props.packages.data ?? []);
 const categoryOptions = computed(() => [...new Set(['General', 'Food', 'Medical', 'Hygiene', 'Emergency', ...props.categories])].sort());
+const preparationPreview = computed(() => {
+    const ingredients = form.items.map((ingredient) => {
+        const stock = props.inventoryItems.find((item) => Number(item.id) === Number(ingredient.inventory_item_id));
+        return {
+            selected: Boolean(stock),
+            name: stock?.item_name ?? 'Selected supply',
+            unit: stock?.unit ?? 'units',
+            perPack: Number(ingredient.quantity_per_package || 0),
+            available: Number(stock?.quantity ?? 0),
+        };
+    });
+    const complete = ingredients.length > 0 && ingredients.every((ingredient) => ingredient.selected);
+    const packsPossible = complete
+        ? Math.min(...ingredients.map((ingredient) => Math.floor(ingredient.available / Math.max(1, ingredient.perPack))))
+        : 0;
+    return {
+        packsPossible,
+        ingredients: ingredients.map((ingredient) => ({ ...ingredient, required: ingredient.perPack * packsPossible })),
+    };
+});
 
 function visitSearch(replace = false) {
     lastSearch = filters.search.trim();
@@ -99,18 +119,26 @@ function savePackage() {
 }
 
 async function deletePackage(item) {
-    const confirmed = await appConfirm(`Delete “${item.package_name}”? This cannot be undone.`, {
+    const confirmed = await appConfirm(`Delete “${item.package_name}”? Any prepared packs still available will be returned to inventory. Packages with distribution history cannot be deleted.`, {
         title: 'Delete package?',
         confirmLabel: 'Delete package',
         danger: true,
     });
     if (confirmed) router.delete(routes.value.packageDelete.replace('__ID__', encodeURIComponent(item.id)), { preserveScroll: true });
 }
+
+async function preparePackage(item) {
+    const confirmed = await appConfirm(`Prepare all complete packs possible for “${item.package_name}” using current inventory? Required supplies will be deducted from inventory.`, {
+        title: 'Prepare available packs?',
+        confirmLabel: 'Prepare packs',
+    });
+    if (confirmed) router.post(routes.value.packagePrepare.replace('__ID__', encodeURIComponent(item.id)), {}, { preserveScroll: true });
+}
 </script>
 
 <template>
     <section class="module-heading">
-        <div><h2>Relief packages</h2><p>Build reusable package templates from inventory supplies. Stock is deducted each time a package is released.</p></div>
+        <div><h2>Relief packages</h2><p>Prepare packs from inventory supplies. Ingredient stock is deducted when packs are prepared; assignments use prepared pack stock.</p></div>
         <div class="package-create-action"><small v-if="!inventoryItems.length">Add inventory supplies before creating a package template.</small><button class="add-button" type="button" :disabled="!inventoryItems.length" @click="openAddModal"><span>+</span> Add package</button></div>
     </section>
 
@@ -134,7 +162,7 @@ async function deletePackage(item) {
                         <td>{{ item.description || '—' }}</td>
                         <td><b>{{ item.available_quantity ?? 0 }}</b> packs</td>
                         <td><span class="tag" :class="item.status === 'Available' ? 'success' : 'warning'">{{ item.status === 'Available' ? 'Active template' : item.status === 'Unavailable' ? 'Unavailable' : 'Paused' }}</span></td>
-                        <td><div class="inventory-row-actions"><button class="action-btn" type="button" @click="openEditModal(item)">Edit</button><button class="action-btn delete" type="button" :disabled="form.processing" @click="deletePackage(item)">Delete</button></div></td>
+                        <td><div class="inventory-row-actions"><button class="action-btn" type="button" @click="preparePackage(item)">Prepare stock</button><button class="action-btn" type="button" @click="openEditModal(item)">Edit</button><button class="action-btn delete" type="button" :disabled="form.processing" @click="deletePackage(item)">Delete</button></div></td>
                     </tr>
                     <tr v-if="!rows.length"><td colspan="6" class="empty-cell">{{ filters.search ? 'No packages match this search.' : 'No relief packages yet.' }}</td></tr>
                 </tbody>
@@ -150,7 +178,7 @@ async function deletePackage(item) {
             <label>Category<select v-model="form.category" required><option v-for="category in categoryOptions" :key="category" :value="category">{{ category }}</option></select><small class="recipe-help">Choose a category already used by inventory or packages.</small><small v-if="form.errors.category" class="field-error">{{ form.errors.category }}</small></label>
             <label>Description<textarea v-model="form.description" rows="3"/><small v-if="form.errors.description" class="field-error">{{ form.errors.description }}</small></label>
             <fieldset class="package-recipe"><legend>Items in one package</legend>
-                <p class="recipe-help">Choose the supplies and amount needed for one pack. Stock is deducted automatically when staff records a release.</p>
+                <p class="recipe-help">Choose the supplies and quantity needed for one pack. Preparing packs deducts those amounts from inventory.</p>
                 <div v-for="(ingredient, index) in form.items" :key="index" class="recipe-row">
                     <select v-model="ingredient.inventory_item_id" required aria-label="Inventory item">
                         <option value="">Select supply</option>
@@ -163,6 +191,13 @@ async function deletePackage(item) {
                 <small v-if="form.errors.items" class="field-error">{{ form.errors.items }}</small>
                 <button type="button" class="action-btn recipe-add" @click="addIngredient">+ Add supply</button>
             </fieldset>
+            <section v-if="!editingId" class="preparation-preview" aria-label="Automatic pack preparation preview">
+                <strong>{{ preparationPreview.packsPossible }} pack(s) ready after creation</strong>
+                <p>{{ preparationPreview.packsPossible ? 'The app will prepare the maximum complete packs and deduct the supplies shown below.' : 'Current inventory is not enough to make one complete pack. The package recipe can still be saved.' }}</p>
+                <ul>
+                    <li v-for="part in preparationPreview.ingredients" :key="part.name"><span>{{ part.name }}</span><strong>{{ part.required }} {{ part.unit }} deducted</strong><small>{{ part.perPack }} {{ part.unit }} per pack · {{ part.available }} available</small></li>
+                </ul>
+            </section>
             <label>Template status<select v-model="form.status" required><option value="Available">Active</option><option value="Not Available">Paused</option><option value="Unavailable">Unavailable</option></select><small v-if="form.errors.status" class="field-error">{{ form.errors.status }}</small></label>
             <div class="modal-actions"><button class="cancel-button" type="button" :disabled="form.processing" @click="modal?.close()">Cancel</button><button class="primary-action" type="submit" :disabled="form.processing">{{ form.processing ? 'Saving…' : editingId ? 'Update package' : 'Save package' }}</button></div>
         </form>
@@ -175,6 +210,12 @@ async function deletePackage(item) {
 .package-create-action small { color: #718096; font-size: 11px; }
 .package-recipe legend { padding: 0 5px; color: #334e6e; font-size: 12px; font-weight: 700; }
 .recipe-help { margin: 0 0 11px; color: #718096; font-size: 11px; line-height: 1.5; }
+.preparation-preview { display: grid; gap: 6px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid #dce8df; border-radius: 8px; background: #f6faf7; color: #40574a; font-size: 12px; }
+.preparation-preview > p { margin: 0; color: #718278; font-size: 11px; line-height: 1.45; }
+.preparation-preview ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.preparation-preview li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
+.preparation-preview li strong { color: #274b36; }
+.preparation-preview small { grid-column: 1 / -1; color: #718278; font-size: 10px; }
 .recipe-row { display: grid; grid-template-columns: minmax(0, 1fr) 84px auto auto; align-items: center; gap: 8px; margin-bottom: 8px; }
 .recipe-row span { color: #718096; font-size: 11px; white-space: nowrap; }
 .recipe-row input, .recipe-row select { min-width: 0; width: 100%; min-height: 38px; }

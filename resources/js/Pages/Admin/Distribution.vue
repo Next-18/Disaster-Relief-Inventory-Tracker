@@ -11,10 +11,12 @@ defineOptions({ layout: AdminLayout });
 
 const props = defineProps({
     distributions: { type: Object, required: true },
+    distributedToday: { type: Array, default: () => [] },
     beneficiaries: { type: Array, required: true },
     packages: { type: Array, required: true },
     search: { type: String, default: '' },
     status: { type: String, default: 'all' },
+    dateFilter: { type: String, default: '' },
     today: { type: String, required: true },
     canManageDistributions: { type: Boolean, default: false },
     canAssignDistributions: { type: Boolean, default: false },
@@ -26,6 +28,7 @@ const page = usePage();
 const routes = computed(() => page.props.routeUrls ?? {});
 const searchTerm = ref(props.search);
 const statusFilter = ref(props.status);
+const dateFilter = ref(props.dateFilter);
 const modal = ref(null);
 const recordModalOpen = ref(false);
 const scannerModal = ref(null);
@@ -37,7 +40,7 @@ const pendingReleaseOptions = ref([]);
 const pendingReleaseError = ref('');
 const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine);
 const editingId = ref(null);
-const form = useForm({ recipient_mode: 'individual', beneficiary_id: '', priority_type: '', package_id: '', start_date: '', deadline: '', claim_venue: '', status: 'Pending', notes: '' });
+const form = useForm({ recipient_mode: 'individual', beneficiary_id: '', priority_type: '', package_id: '', start_date: '', deadline: '', event_name: '', claim_venue: '', status: 'Pending', notes: '' });
 const rows = computed(() => props.distributions.data ?? []);
 const recipientCount = computed(() => {
     if (form.recipient_mode === 'individual') return form.beneficiary_id ? 1 : 0;
@@ -67,6 +70,9 @@ watch(() => props.search, (value) => {
 });
 watch(() => props.status, (value) => {
     statusFilter.value = value ?? 'all';
+});
+watch(() => props.dateFilter, (value) => {
+    dateFilter.value = value ?? '';
 });
 watch(searchTerm, () => {
     if (searchTerm.value.trim() === lastSubmittedSearch) return;
@@ -100,6 +106,7 @@ function searchDistributions(replace = false) {
     router.get(routes.value.distribution, {
         search: lastSubmittedSearch || undefined,
         status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+        date: dateFilter.value || undefined,
     }, { preserveState: true, preserveScroll: true, replace });
 }
 
@@ -110,6 +117,7 @@ function openAddModal(beneficiaryId = '') {
     form.clearErrors();
     form.start_date = props.today;
     form.deadline = props.today;
+    form.event_name = '';
     form.claim_venue = '';
     form.status = 'Pending';
     form.recipient_mode = 'individual';
@@ -129,6 +137,7 @@ function openEditModal(distribution) {
     form.package_id = distribution.package_id ?? '';
     form.start_date = distribution.start_date ?? String(distribution.date_released).slice(0, 10);
     form.deadline = distribution.deadline ?? String(distribution.date_released).slice(0, 10);
+    form.event_name = distribution.event_name ?? '';
     form.claim_venue = distribution.claim_venue ?? '';
     form.status = distribution.status;
     form.notes = distribution.notes ?? '';
@@ -293,28 +302,49 @@ function formatDate(value) {
 
     <section v-if="canViewDistributionHistory" class="panel record-panel">
         <div class="panel-heading">
-            <div><h3>Distribution history</h3><p>{{ distributions.total }}{{ search || statusFilter !== 'all' ? ' matching' : ' total' }} distribution records</p></div>
+            <div><h3>Distributed today</h3><p>{{ distributedToday.length }} {{ distributedToday.length === 1 ? 'beneficiary' : 'beneficiaries' }} received a package today</p></div>
+        </div>
+        <div class="table-wrap"><table class="record-table field-distribution-table">
+            <thead><tr><th>BENEFICIARY</th><th>EVENT</th><th>RELIEF PACKAGE</th><th>VENUE</th><th>RELEASE TIME</th></tr></thead>
+            <tbody>
+                <tr v-for="distribution in distributedToday" :key="`today-${distribution.id}`">
+                    <td data-label="Beneficiary"><b>{{ distribution.beneficiary?.full_name ?? 'Unknown Beneficiary' }}</b><small>{{ distribution.beneficiary?.beneficiary_no ?? 'N/A' }}</small></td>
+                    <td data-label="Event">{{ distribution.event_name || 'General distribution' }}</td>
+                    <td data-label="Package">{{ distribution.relief_package?.package_name ?? 'Unknown Package' }}</td>
+                    <td data-label="Venue">{{ distribution.claim_venue || 'Not specified' }}</td>
+                    <td data-label="Release time">{{ distribution.released_at ? new Date(distribution.released_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Time unavailable' }}</td>
+                </tr>
+                <tr v-if="!distributedToday.length"><td colspan="5" class="empty-cell">No packages have been released today.</td></tr>
+            </tbody>
+        </table></div>
+    </section>
+
+    <section v-if="canViewDistributionHistory" class="panel record-panel">
+        <div class="panel-heading">
+            <div><h3>Distribution history</h3><p>{{ distributions.total }}{{ search || statusFilter !== 'all' || dateFilter ? ' matching' : ' total' }} records · Review recipients by date, package, and venue.</p></div>
             <form class="module-search-form" role="search" @submit.prevent="searchDistributions()">
                 <label class="sr-only" for="distribution-search">Search distributions</label>
+                <input v-model="dateFilter" class="filter-select" type="date" aria-label="Filter distributions by date" @change="searchDistributions(true)">
                 <select v-model="statusFilter" class="filter-select distribution-status-filter" aria-label="Filter distributions by status" @change="searchDistributions(true)"><option value="all">All statuses</option><option value="Pending">Pending</option><option value="Released">Released</option><option value="Cancelled">Cancelled</option><option value="Voided">Voided</option></select>
                 <input id="distribution-search" v-model="searchTerm" class="table-search distribution-search" type="search" placeholder="Search beneficiary, package..." aria-label="Search distributions">
                 <button class="action-btn" type="submit">Search</button>
-                <button v-if="searchTerm || statusFilter !== 'all'" class="filter-clear" type="button" @click="searchTerm = ''; statusFilter = 'all'; searchDistributions()">Clear</button>
+                <button v-if="searchTerm || statusFilter !== 'all' || dateFilter" class="filter-clear" type="button" @click="searchTerm = ''; statusFilter = 'all'; dateFilter = ''; searchDistributions()">Clear</button>
             </form>
         </div>
         <div class="table-wrap"><table class="record-table field-distribution-table">
-            <thead><tr><th>BENEFICIARY</th><th>RELIEF PACKAGE</th><th>CLAIM VENUE</th><th>DISTRIBUTION WINDOW</th><th>DATE RELEASED</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+            <thead><tr><th>BENEFICIARY</th><th>EVENT</th><th>RELIEF PACKAGE</th><th>VENUE</th><th>DISTRIBUTION WINDOW</th><th>DISTRIBUTION DATE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
             <tbody>
                 <tr v-for="distribution in rows" :key="distribution.id">
                     <td data-label="Beneficiary"><b>{{ distribution.beneficiary?.full_name ?? 'Unknown Beneficiary' }}</b><small>{{ distribution.beneficiary?.beneficiary_no ?? 'N/A' }}</small></td>
+                    <td data-label="Event">{{ distribution.event_name || 'General distribution' }}</td>
                     <td data-label="Package">{{ distribution.relief_package?.package_name ?? 'Unknown Package' }}</td>
-                    <td data-label="Claim venue">{{ distribution.claim_venue || 'Not specified' }}</td>
+                    <td data-label="Venue / event location">{{ distribution.claim_venue || 'Not specified' }}</td>
                     <td data-label="Distribution window"><span>{{ formatDate(distribution.start_date) }} – {{ formatDate(distribution.deadline) }}</span></td>
                     <td data-label="Date">{{ formatDate(distribution.date_released) }}</td>
                     <td data-label="Status"><span class="tag" :class="{ success: distribution.status === 'Released', warning: distribution.status === 'Pending', neutral: ['Cancelled', 'Voided'].includes(distribution.status) }">{{ distribution.status }}</span></td>
                     <td data-label="Actions"><div v-if="canManageDistributions && ['Pending', 'Released'].includes(distribution.status)" class="inventory-row-actions"><button type="button" class="action-btn" @click="openEditModal(distribution)">Edit</button><button type="button" class="action-btn delete" @click="deleteDistribution(distribution)">{{ distribution.status === 'Pending' ? 'Cancel assignment' : 'Void record' }}</button></div><span v-else>{{ ['Cancelled', 'Voided'].includes(distribution.status) ? 'History kept' : 'Recorded' }}</span></td>
                 </tr>
-                <tr v-if="!rows.length"><td colspan="7" class="empty-cell">{{ search ? 'No distributions match this search.' : 'No distribution records yet.' }}</td></tr>
+                <tr v-if="!rows.length"><td colspan="8" class="empty-cell">{{ search || statusFilter !== 'all' || dateFilter ? 'No distribution records match the selected filters.' : 'No distribution records yet.' }}</td></tr>
             </tbody>
         </table></div>
         <InertiaPagination :links="distributions.links" :show="distributions.last_page > 1" />
@@ -364,6 +394,7 @@ function formatDate(value) {
                 <label>Start of distribution<input v-model="form.start_date" type="date" :max="form.deadline || undefined" required><small v-if="form.errors.start_date" class="field-error">{{ form.errors.start_date }}</small></label>
                 <label>Deadline<input v-model="form.deadline" type="date" :min="form.start_date || undefined" required><small v-if="form.errors.deadline" class="field-error">{{ form.errors.deadline }}</small></label>
             </div>
+            <label>Distribution event<input v-model="form.event_name" type="text" maxlength="255" placeholder="e.g. Typhoon relief distribution"><small v-if="form.errors.event_name" class="field-error">{{ form.errors.event_name }}</small></label>
             <label>Claim venue<input v-model="form.claim_venue" type="text" maxlength="255" placeholder="e.g. Barangay Hall, Covered Court" required><small v-if="form.errors.claim_venue" class="field-error">{{ form.errors.claim_venue }}</small></label>
             <div class="distribution-pending-status"><strong>{{ form.status === 'Released' ? 'Released — scan confirmed' : 'Pending — QR scan required' }}</strong><span>{{ form.status === 'Released' ? 'This record was already marked released after a QR scan. Its status cannot be changed here.' : 'Recording an assignment does not confirm pickup. It will be marked released only after staff scan the beneficiary’s QR code.' }}</span></div>
             <label>Notes<textarea v-model="form.notes" rows="3"/><small v-if="form.errors.notes" class="field-error">{{ form.errors.notes }}</small></label>

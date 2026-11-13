@@ -66,6 +66,7 @@ class HandleInertiaRequests extends Middleware
                 'packages' => route('admin.packages'),
                 'packageStore' => route('admin.packages.store'),
                 'packageUpdate' => route('admin.packages.update', ['id' => '__ID__']),
+                'packagePrepare' => route('admin.packages.prepare-stock', ['id' => '__ID__']),
                 'packageDelete' => route('admin.packages.delete', ['id' => '__ID__']),
                 'qrCodes' => route('admin.qr-codes'),
                 'qrImage' => route('admin.qr-codes.image', ['id' => '__ID__']),

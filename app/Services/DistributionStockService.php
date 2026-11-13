@@ -16,10 +16,13 @@ class DistributionStockService
         $package = ReliefPackage::query()->lockForUpdate()->findOrFail($distribution->package_id);
         $this->ensureNotAlreadyAssigned($distribution);
 
-        // Pending assignments reserve their package contents. When the
-        // beneficiary is checked in later, its inventory snapshots already
-        // exist, so releasing it must not consume the same stock twice.
+        // An assignment reserves either one prepared pack or its recipe items.
+        // The snapshots let check-in confirm the release without consuming it twice.
         if ($distribution->inventoryItems()->exists()) {
+            return;
+        }
+
+        if ($distribution->stock_source === 'prepared_package') {
             return;
         }
 
@@ -34,6 +37,24 @@ class DistributionStockService
             throw ValidationException::withMessages([
                 'package_id' => 'Add inventory items to this package recipe before releasing it.',
             ]);
+        }
+
+        if ($package->quantity_on_hand > 0) {
+            $package->quantity_on_hand--;
+            $package->save();
+            $distribution->stock_source = 'prepared_package';
+            $distribution->save();
+
+            foreach ($recipe as $recipeItem) {
+                $distribution->inventoryItems()->create([
+                    'inventory_item_id' => $recipeItem->id,
+                    'item_name' => $recipeItem->item_name,
+                    'unit' => $recipeItem->unit,
+                    'quantity' => (int) $recipeItem->pivot->quantity_per_package,
+                ]);
+            }
+
+            return;
         }
 
         foreach ($recipe as $recipeItem) {
@@ -54,20 +75,32 @@ class DistributionStockService
                 'quantity' => $required,
             ]);
         }
+        $distribution->stock_source = 'inventory_items';
+        $distribution->save();
     }
 
     public function restoreFor(Distribution $distribution): void
     {
-        foreach ($distribution->inventoryItems as $snapshot) {
-            if ($snapshot->inventory_item_id) {
-                $item = InventoryItem::query()->lockForUpdate()->find($snapshot->inventory_item_id);
-                if ($item) {
-                    $this->setQuantity($item, $item->quantity + $snapshot->quantity);
+        if ($distribution->stock_source === 'prepared_package') {
+            $package = ReliefPackage::query()->lockForUpdate()->find($distribution->package_id);
+            if ($package) {
+                $package->quantity_on_hand++;
+                $package->save();
+            }
+        } else {
+            foreach ($distribution->inventoryItems as $snapshot) {
+                if ($snapshot->inventory_item_id) {
+                    $item = InventoryItem::query()->lockForUpdate()->find($snapshot->inventory_item_id);
+                    if ($item) {
+                        $this->setQuantity($item, $item->quantity + $snapshot->quantity);
+                    }
                 }
             }
         }
 
         $distribution->inventoryItems()->delete();
+        $distribution->stock_source = null;
+        $distribution->save();
     }
 
     private function setQuantity(InventoryItem $item, int $quantity): void
